@@ -13,8 +13,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - profile: preview
-            artifact: CaddyCheck-1.0.1.apk
+                 - profile: production
+         artifact: CaddyCheck-1.0.1.aab
             
     steps:
       - name: Checkout code
