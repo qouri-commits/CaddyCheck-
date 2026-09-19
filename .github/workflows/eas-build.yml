@@ -1,0 +1,65 @@
+الاسم: إصدارات CaddyCheck لنظام Android
+
+على:
+  يدفع:
+    الفروع: [الرئيسي]
+  workflow_dispatch:
+
+الوظائف:
+  يبني:
+    الاسم: بناء ${{ matrix.artifact }}
+    يعمل على: أوبونتو-أحدث
+    الاستراتيجية:
+      فشل سريع: خطأ
+      المصفوفة:
+        يشمل:
+          - الملف الشخصي: معاينة
+            الملف: CaddyCheck-1.0.1.apk
+          - الملف الشخصي: الإنتاج
+            الملف: CaddyCheck-1.0.1.aab
+    خطوات:
+      - الاسم: رمز الدفع
+        الاستخدامات: actions/checkout@v4
+
+      - الاسم: إعداد Node.js
+        الاستخدامات: actions/setup-node@v4
+        مع:
+          إصدار Node: 20
+
+      - الاسم: إعداد EAS
+        يستخدم: expo/expo-github-action@v8
+        مع:
+          إصدار eas: الأحدث
+          الرمز المميز: ${{ secrets.EXPO_TOKEN }}
+
+      - الاسم: تثبيت التبعيات
+        تشغيل: |
+          تفعيل Corepack
+          pnpm install --frozen-lockfile
+
+      - الاسم: تهيئة واجهة برمجة تطبيقات الإنتاج
+        تشغيل: echo "EXPO_PUBLIC_API_URL=https://global-shopping-calculator--specialmen100.replit.app" >> "$GITHUB_ENV"
+
+      - الاسم: بناء ملف تنفيذي لنظام Android
+        دليل العمل: artifacts/caddycheck
+        تشغيل: |
+          بناء سهل
+            --profile "${{ matrix.profile }}" \
+            --platform android
+            --غير تفاعلي
+            --انتظر \
+            --json > eas-build.json
+
+      - الاسم: تنزيل ملفات Android الثنائية
+        دليل العمل: artifacts/caddycheck
+        تشغيل: |
+          BUILD_URL="$(node ​​-e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync("eas-build.json","utf8")); const build=Array.isArray(value) ? value[0] : value; process.stdout.write(build?.artifacts?.buildUrl || build?.artifacts?.[0]?.buildUrl || "")')"
+          اختبار -n "$BUILD_URL"
+          curl --fail --location --retry 3 "$BUILD_URL" -o "${{ matrix.artifact }}"
+
+      - الاسم: تحميل ملف ثنائي لنظام أندرويد
+        الاستخدامات: actions/upload-artifact@v4
+        مع:
+          الاسم: CaddyCheck-${{ matrix.profile }}-${{ github.run_number }}
+          المسار: artifacts/caddycheck/${{ matrix.artifact }}
+          خطأ في حالة عدم العثور على ملفات
