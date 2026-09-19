@@ -32,6 +32,12 @@ const LANG_LABELS: Record<Language, string> = {
   en: "English",
 };
 
+const DIRHAM_LABELS: Record<Language, string> = {
+  ar: "الدرهم المغربي",
+  fr: "Dirham marocain",
+  en: "Moroccan dirham",
+};
+
 const CURRENCIES: { code: string; label: string }[] = [
   { code: "MAD", label: "MAD" },
   { code: "TND", label: "TND" },
@@ -427,9 +433,11 @@ export default function SettingsScreen() {
               {CURRENCIES.map((c) => {
                 const active = currency === c.code;
                 const sym = CURRENCY_SYMBOLS[c.code] ?? c.code;
+                const currencyLabel = c.code === "MAD" ? DIRHAM_LABELS[language] : sym;
                 return (
                   <TouchableOpacity
                     key={c.code}
+                    testID={`currency-${c.code}`}
                     onPress={async () => {
                       if (active) return;
                       if (!requireEmptyBasketForCurrencyChange()) return;
@@ -448,7 +456,7 @@ export default function SettingsScreen() {
                     activeOpacity={0.75}
                     accessibilityRole="button"
                     accessibilityState={{ selected: active }}
-                    accessibilityLabel={`${sym} ${c.code}`}
+                    accessibilityLabel={`${currencyLabel} ${c.code}`}
                   >
                     <Text
                       style={[
@@ -470,7 +478,7 @@ export default function SettingsScreen() {
                         },
                       ]}
                     >
-                      {sym}
+                      {currencyLabel}
                     </Text>
                   </TouchableOpacity>
                 );
