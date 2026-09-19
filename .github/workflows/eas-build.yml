@@ -9,12 +9,11 @@ jobs:
   build:
     name: Build ${{ matrix.artifact }}
     runs-on: ubuntu-latest
-    strategy:
+        strategy:
       fail-fast: false
       matrix:
         include:
-                 - profile: production
-         artifact: CaddyCheck-1.0.1.aab
+          - { profile: production, artifact: CaddyCheck-1.0.1.aab }
             
     steps:
       - name: Checkout code
