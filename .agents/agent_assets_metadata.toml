@@ -1,0 +1,116 @@
+uploads = []
+
+[[generated]]
+id = "vAORiT_LI0-_dRPZUbPsQ"
+uri = "file://artifacts/caddycheck/assets/images/icon.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "_ZqY1EO4ASUYIXLj0FsNM"
+uri = "file://screenshots/playstore_archive_ar.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "bLb6op4oKdhpRrEtQE1yo"
+uri = "file://screenshots/playstore_basket_ar.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "wu2lMOk7xEB2X3nBrFa5L"
+uri = "file://screenshots/playstore_chart_ar.png"
+type = "image"
+title = "generated_image"
+
+[[outputs]]
+id = "hPg-zKptBrc0w_QiwH6i7"
+uri = "file://artifacts/caddycheck/assets/images/icon.png"
+type = "image"
+title = "App Icon — iOS + Web (1024×1024)"
+logical_id = "8e602f9d-8ebb-403e-ab26-6e809bde41cf"
+
+[[outputs]]
+id = "3KpT5iZ7XfSfW0M2-VUE_"
+uri = "file://screenshots/playstore_basket_ar.png"
+type = "image"
+title = "Play Store — Basket Screen (Arabic)"
+logical_id = "d8664e99-3c93-4c36-ae29-8644bee6e590"
+
+[[outputs]]
+id = "xA-dE6ms0caF587x8M0Hz"
+uri = "file://screenshots/playstore_archive_ar.png"
+type = "image"
+title = "Play Store — Archive Screen (Arabic)"
+logical_id = "4ed31a86-f85e-42c5-87db-18e8f7d6373b"
+
+[[outputs]]
+id = "_WZUvoaShpwXkyGL2zNEN"
+uri = "file://screenshots/playstore_chart_ar.png"
+type = "image"
+title = "Play Store — Price Chart (Arabic)"
+logical_id = "c0e1e040-e148-4b95-bc63-777a107c7bd6"
+
+[[outputs]]
+id = "Sdsmgr8GWum9df0LTkkRU"
+uri = "file://screenshots/qr_expo.png"
+type = "image"
+title = "Scan with Expo Go"
+logical_id = "335330fd-34e6-4f0e-97ab-0ac10c08d4ae"
+
+[[outputs]]
+id = "_gdiLBufbXhgseddDA0Za"
+uri = "file://artifacts/caddycheck/assets/images/splash.png"
+type = "image"
+title = "Splash Screen (2048×2048)"
+logical_id = "c656e441-61a4-4bd4-bb53-a93be9cfcc69"
+
+[[outputs]]
+id = "BL7v47LYP08YLh1qpw4Uy"
+uri = "file://artifacts/caddycheck/assets/images/adaptive-icon.png"
+type = "image"
+title = "Adaptive Icon Foreground — Android (1024×1024 transparent)"
+logical_id = "6d5a4f10-d4aa-4472-adbd-2e38fc7310ef"
+
+[[outputs]]
+id = "ARzTpAtGjeJ9IIF7pM7p2"
+uri = "file://artifacts/caddycheck/release/CaddyCheck-Gumroad-Kit-1.0.1.zip"
+type = "unspecified"
+title = "CaddyCheck Gumroad Kit 1.0.1"
+description = "حزمة جاهزة للرفع إلى Gumroad: وصف المنتج بالعربية والإنجليزية، قائمة الرفع، دليل التثبيت، وملاحظات الإصدار. أضف APK النهائي إلى Gumroad separately before publishing."
+logical_id = "a10ef335-1487-4ed7-ac14-4aaf57b1f385"
+content_hash = "sha256:a2c842eeb4f4c94aa9a6e77f8bf29048c42c2fac9c52af6b0a6e8e2697852059"
+size = 8828
+mtime_ms = 1789737342965
+storage_uri = "gcs://replit-rams-assets-kirk/rams/assets/repl:cb7e03a5-f9a2-4040-994a-477271b5c777/a10ef335-1487-4ed7-ac14-4aaf57b1f385/199baa14-6826-4b1b-947c-146b292e3ca6"
+storage_version_token = "1789737352467818"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "8xcr-MGvb9_zBdaZQu9ot"
+uri = "file://artifacts/caddycheck/GUMROAD_LISTING_AR.md"
+type = "text"
+title = "CaddyCheck Gumroad Listing Copy"
+description = "النص الكامل الجاهز للنسخ واللصق في صفحة منتج Gumroad بالعربية والإنجليزية."
+logical_id = "ab3281b7-24f7-4811-8be9-6370ef64e5dc"
+content_hash = "sha256:4089f210f4e1bb27762469273c85ec148d50e2ef09d27d5fe3d3b0deea0f145f"
+size = 9873
+mtime_ms = 1786153873689
+storage_uri = "gcs://replit-rams-assets-kirk/rams/assets/repl:cb7e03a5-f9a2-4040-994a-477271b5c777/ab3281b7-24f7-4811-8be9-6370ef64e5dc/4e78aa5c-4138-48a6-ae96-e7f35ff7d358"
+storage_version_token = "1789737353160849"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "4NnDdbwwXF4P-UeuDIVBn"
+uri = "file://artifacts/caddycheck/release/CaddyCheck-Google-Play-Kit-1.0.1.zip"
+type = "unspecified"
+title = "CaddyCheck Google Play Kit 1.0.1"
+description = "Google Play listing copy in Arabic and English, upload checklist, privacy policy drafts, app icon, feature graphic, and current app screenshots. The Android AAB is intentionally not included until it is built and tested against the published API."
+logical_id = "e7a21852-d2a8-431d-8893-a3e37e037914"
+content_hash = "sha256:b49211b726036b06e10e74049b9c24f1fa2559208b5b7e3fe28a3efa5db85985"
+size = 121943
+mtime_ms = 1789738434794
+storage_uri = "gcs://replit-rams-assets-kirk/rams/assets/repl:cb7e03a5-f9a2-4040-994a-477271b5c777/e7a21852-d2a8-431d-8893-a3e37e037914/28073bcf-6698-4ac7-ba9b-9dfc8ba70efa"
+storage_version_token = "1789738442734119"
+content_type = "application/octet-stream"

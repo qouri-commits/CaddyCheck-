@@ -1,0 +1,121 @@
+Build "CaddyCheck" - Professional Global Shopping Calculator & Price Tracker v2.0
+
+You are building a production-ready mobile app for Android + iOS. Code quality must be Silicon Valley level. Zero bugs. Zero language mixing.
+
+### 1. TECH STACK & SETUP
+- Framework: React Native + Expo SDK 51 + TypeScript
+- Navigation: Expo Router
+- Storage: AsyncStorage for local data, Supabase for anonymous analytics
+- UI Library: React Native Paper + Lucide Icons
+- Lists: FlashList for performance
+- PDF: expo-print
+- Barcode: expo-barcode-scanner
+- Localization: expo-localization + i18n-js
+- RTL: I18nManager
+- App size target: <15MB
+
+### 2. APP IDENTITY & DESIGN SYSTEM
+- App Name: CaddyCheck
+- Package: com.caddycheck.app
+- Primary Color: #00A86B - Emerald Green
+- Danger Color: #FF3B30 - Red for price increase
+- Success Color: #34C759 - Green for price decrease
+- Background: #FFFFFF, Surface: #F8F9FA
+- Fonts: Inter for EN/FR, Cairo for AR. Use expo-font
+- Icon/Logo: Generate an icon. Concept: Minimal shopping cart 🛒 + checkmark ✓ integrated. Green #00A86B on white. Simple, global, memorable. No text in logo.
+
+### 3. LANGUAGE & RTL - CRITICAL RULES
+- Default Language: 'ar' - Moroccan Darija. Ignore phone language on first launch
+- Supported: AR, FR, EN. Store all strings in /i18n/ar.json, fr.json, en.json
+- RTL: If language === 'ar', call I18nManager.forceRTL(true) and Updates.reloadAsync()
+- Header: Add 🌐 icon left side. Tap opens BottomSheet: [✓ العربية] [Français] [English]
+- On language change: Save 'user_language' to AsyncStorage and reload app
+- Numbers: Always 0123456789. Never Arabic-Indic
+- Currency: Default MAD. Symbol after number in AR: "247.50 درهم"
+- NO MIXING: If AR selected, 100% of text, buttons, alerts must be AR
+
+### 4. CORE FEATURE - SINGLE SCREEN BASKET WITH QUANTITY
+Screen: Main/Basket
+- Header: [🌐] CaddyCheck [⚙️]
+- Total Section:
+    - Label: "المجموع"
+    - Amount: BIG font, "247.50 درهم" - auto calculated from all items
+    - Count: "8 منتجات" - sum of all quantities
+- List: FlashList, vertical scroll. Each row:
+    - [Product Image 50x50]
+    - [Name]
+    - Row 2: [Price Tappable] x [Quantity Tappable] = [Subtotal]
+    - Example: "12.50 درهم x [ 2 ] = 25.00 درهم"
+    - Tap Price: Inline edit with numeric keyboard only
+    - Tap Quantity: Inline edit with numeric keyboard only. Default = 1. Min = 1
+    - Swipe Left: Show Delete button [🗑️ حذف]
+- FAB: Bottom center, circular, #00A86B, icon [+] size 28
+- Tap FAB: Open Camera Scanner
+- Tap Total Amount: Navigate to /compare
+
+### 5. BARCODE SCAN & ADD PRODUCT FLOW WITH QUANTITY
+1. Camera opens with frame overlay
+2. On scan EAN13:
+      - Fetch from OpenFoodFacts API v2: https://world.openfoodfacts.org/api/v2/product/{barcode}.json
+      - Cache response in AsyncStorage for offline use
+      - If found: Show Modal: [Image] [Product Name] [Input: السعر في الرف] [Input: الكمية] Default quantity = 1 + Numeric Keyboard
+      - If not found: Show Modal: [Input: اسم المنتج] [Input: السعر في الرف] [Input: الكمية] Default quantity = 1 + Numeric Keyboard
+3. Show 2 Suggested Prices below input:
+      - Button 1: Last price user paid for this barcode
+      - Button 2: Average price from OpenFoodFacts for user country
+4. Button "أضف للسلة" -> Add to list with quantity and close modal
+5. PRICE CHANGE ALERT: On modal open, check if barcode exists in archive. If yes and price different:
+      - Show text below input: "▲ +0.50 درهم مقارنة بآخر مرة في مرجان" color #FF3B30
+      - Or: "▼ -2.00 درهم" color #34C759
+
+### 6. STORE SELECTION & ARCHIVE
+- On "Save Trip" button in Compare Screen: Open BottomSheet "فين تقديتي؟"
+- Data: const DEFAULT_STORES = { MA: [{name:"مرجان",icon:"🏪",popular:true}, {name:"كارفور",icon:"🛍️",popular:true}, {name:"بيم",icon:"🛒",popular:true}, {name:"أسواق السلام",icon:"🥕"}, {name:"لابيل في",icon:"🏬"}, {name:"أتاكاداو",icon:"📦"}, {name:"أسيما",icon:"🛒"}, {name:"مؤسسة الحنصالي",icon:"🏪"}, {name:"السوق المركزي",icon:"🧺"}, {name:"سوق الجملة",icon:"📦"}], GLOBAL: [{name:"Lidl",icon:"🛒",country:"DE"}, {name:"Aldi",icon:"🛍️",country:"DE"}, {name:"Walmart",icon:"🏪",country:"US"}, {name:"Tesco",icon:"🛒",country:"GB"}, {name:"Carrefour",icon:"🛍️",country:"FR"}, {name:"Auchan",icon:"🏬",country:"FR"}, {name:"Costco",icon:"📦",country:"US"}, {name:"Monoprix",icon:"🛍️",country:"FR"}, {name:"Lulu",icon:"🛒",country:"AE"}, {name:"Panda",icon:"🐼",country:"SA"}] }
+- UI: SearchBar + Section "الأكثر استعمالاً" + Section "المغرب" + Section "العالم" + Button "+ أضف سوق جديد"
+- Logic: Filter on type. Save custom stores to 'user_stores' in AsyncStorage. Remember last used store
+- Archive Screen: Tab "الأرشيف". FlashList of trips. Row: [📅 04 ماي 2026 - 14:32] [🏪 مرجان] [247.50 درهم]. Tap to view details + Export PDF + Delete
+
+### 7. COMPARE & SAVE SCREEN
+Route: /compare
+- Show: "المجموع ديالك" + 247.50 درهم
+- Input: "المجموع في الفاتورة" + Numeric Keyboard
+- If different: Show "⚠️ فرق: +2.50 درهم" color #FF3B30
+- Button "حفظ التقدية" -> Opens Store Selection BottomSheet -> On select store:
+    1. Create trip object: {id: timestamp, date: 'YYYY-MM-DD', time: 'HH:MM', datetime_full: ISO, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, store: name, store_icon: icon, total, currency, items: [{barcode, name, price, quantity, subtotal}] }
+    2. Save to AsyncStorage 'trips' array
+    3. If user consented: Send to Supabase table 'anonymous_prices': {city: from expo-location, store, date, items: [{barcode, price, quantity}]}
+    4. Navigate to "تم الحفظ" screen -> Button "تقدية جديدة" clears current basket
+- Button "حفظ PDF": Use expo-print. Template: Logo, Date, Store, Table of items with columns [المنتج, الثمن, الكمية, المجموع], Total. Filename: CaddyCheck-2026-05-04.pdf
+
+### 8. SETTINGS & LEGAL
+Screen: /settings
+- Language: [🌐 العربية ✓]
+- Currency: [درهم MAD ✓]
+- Toggle: "مشاركة البيانات مجهولة المصدر لتحسين التطبيق" - default ON
+- Button: "سياسة الخصوصية" -> Modal with text:
+  "CaddyCheck آلة حاسبة فقط. أنت مسؤول عن الأسعار التي تدخلها. نقوم بجمع أسعار المنتجات والكميات واسم السوق وتاريخ التسوق بشكل مجهول المصدر لتحليل تطور الأسعار. لا نجمع اسمك أو هاتفك أو موقعك الدقيق. يمكنك حذف كل بياناتك من السيرفر."
+- Button: "حذف كل بياناتي" -> Clear AsyncStorage + Call Supabase delete function
+- Button: "حول التطبيق" -> "CaddyCheck v1.0. Data by OpenFoodFacts.org"
+
+### 9. FIRST LAUNCH ONBOARDING
+- Show 3 slides: 1. "سكان الكودبار" 2. "دخل الثمن و الكمية" 3. "قارن و وفر"
+- Bottom: Checkbox "أوافق على سياسة الخصوصية و مشاركة البيانات مجهولة المصدر" + Button "ابدأ"
+- Save 'onboarded' = true to AsyncStorage
+
+### 10. OFFLINE & PERFORMANCE
+- All features work offline except first product image fetch
+- Cache OpenFoodFacts data forever in AsyncStorage
+- Use FlashList with estimatedItemSize={80} for 60fps scroll
+- Lazy load images
+
+### 11. CRITICAL ACCEPTANCE TESTS
+1. First launch MUST be in Arabic RTL
+2. Scanning same product twice must show price change alert with correct color
+3. Adding custom store "حانوت الحومة" must make it appear in "الأكثر استعمالاً" next time
+4. PDF must contain date, time, store name, all items with quantity column, total
+5. Changing language to EN must flip entire UI to LTR with no Arabic text left
+6. App must work with airplane mode ON after first scan
+7. Changing quantity from 1 to 5 must update subtotal and total immediately
+8. Archive must show correct total calculated from price * quantity for all items
+
+Generate all code, file structure, and i18n files. Make it production-ready. The UI must be beautiful, minimal, and look like it was designed by Apple.

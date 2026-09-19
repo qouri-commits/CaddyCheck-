@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "name": "CaddyCheck",
+    "slug": "caddycheck",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "caddycheck",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.caddycheck.app",
+      "buildNumber": "2",
+      "infoPlist": {
+        "NSCameraUsageDescription": "CaddyCheck يحتاج إلى الكاميرا لمسح باركود المنتجات."
+      }
+    },
+    "android": {
+      "package": "com.caddycheck.app",
+      "versionCode": 2,
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#00C853"
+      }
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow CaddyCheck to access your camera to scan product barcodes.",
+          "recordAudioAndroid": false
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "apiBase": "https://global-shopping-calculator--specialmen100.replit.app",
+      "eas": {
+        "projectId": "90240960-24c1-4103-bab3-c1269d6a9ce1"
+      }
+    },
+    "owner": "yakt"
+  }
+}

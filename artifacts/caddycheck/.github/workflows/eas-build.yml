@@ -1,0 +1,65 @@
+name: CaddyCheck Android builds
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: preview
+            artifact: CaddyCheck-1.0.1.apk
+          - profile: production
+            artifact: CaddyCheck-1.0.1.aab
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Configure production API
+        run: echo "EXPO_PUBLIC_API_URL=https://global-shopping-calculator--specialmen100.replit.app" >> "$GITHUB_ENV"
+
+      - name: Build Android binary
+        working-directory: artifacts/caddycheck
+        run: |
+          eas build \
+            --profile "${{ matrix.profile }}" \
+            --platform android \
+            --non-interactive \
+            --wait \
+            --json > eas-build.json
+
+      - name: Download Android binary
+        working-directory: artifacts/caddycheck
+        run: |
+          BUILD_URL="$(node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync("eas-build.json","utf8")); const build=Array.isArray(value) ? value[0] : value; process.stdout.write(build?.artifacts?.buildUrl || build?.artifacts?.[0]?.buildUrl || "")')"
+          test -n "$BUILD_URL"
+          curl --fail --location --retry 3 "$BUILD_URL" -o "${{ matrix.artifact }}"
+
+      - name: Upload Android binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: CaddyCheck-${{ matrix.profile }}-${{ github.run_number }}
+          path: artifacts/caddycheck/${{ matrix.artifact }}
+          if-no-files-found: error

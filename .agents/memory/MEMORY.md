@@ -1,0 +1,5 @@
+- [CaddyCheck Architecture](caddycheck-arch.md) — Expo mobile app; dark mode, RTL, AsyncStorage, OpenFoodFacts, key bugs fixed
+- [Zod cross-package mismatch](zod-cross-package.md) — never import Zod schemas from @workspace/db into api-server; define schemas locally to avoid instance incompatibility
+- [DB lib build step](db-lib-build.md) — after editing lib/db/src/schema, run `pnpm run typecheck:libs` before api-server typecheck or new exports won't resolve
+- [EAS build git sandbox block](eas-build-git-sandbox.md) — `eas build` fails on `.git/index.lock`; set `EAS_NO_VCS=1`; also drop `autoIncrement` from eas.json when using app.config.js
+- [Web preview loading fallback](web-preview-loading.md) — Expo web preview can stall on fonts or AsyncStorage; keep bounded fallbacks so the app reaches onboarding.
