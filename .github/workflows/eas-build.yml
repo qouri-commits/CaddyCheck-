@@ -1,65 +1,65 @@
-الاسم: إصدارات CaddyCheck لنظام Android
+name: CaddyCheck Android builds
 
-على:
-  يدفع:
-    الفروع: [الرئيسي]
+on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
-الوظائف:
-  يبني:
-    الاسم: بناء ${{ matrix.artifact }}
-    يعمل على: أوبونتو-أحدث
-    الاستراتيجية:
-      فشل سريع: خطأ
-      المصفوفة:
-        يشمل:
-          - الملف الشخصي: معاينة
-            الملف: CaddyCheck-1.0.1.apk
-          - الملف الشخصي: الإنتاج
-            الملف: CaddyCheck-1.0.1.aab
-    خطوات:
-      - الاسم: رمز الدفع
-        الاستخدامات: actions/checkout@v4
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: preview
+            artifact: CaddyCheck-1.0.1.apk
+          - profile: production
+            artifact: CaddyCheck-1.0.1.aab
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - الاسم: إعداد Node.js
-        الاستخدامات: actions/setup-node@v4
-        مع:
-          إصدار Node: 20
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-      - الاسم: إعداد EAS
-        يستخدم: expo/expo-github-action@v8
-        مع:
-          إصدار eas: الأحدث
-          الرمز المميز: ${{ secrets.EXPO_TOKEN }}
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
 
-      - الاسم: تثبيت التبعيات
-        تشغيل: |
-          تفعيل Corepack
+      - name: Install dependencies
+        run: |
+          corepack enable
           pnpm install --frozen-lockfile
 
-      - الاسم: تهيئة واجهة برمجة تطبيقات الإنتاج
-        تشغيل: echo "EXPO_PUBLIC_API_URL=https://global-shopping-calculator--specialmen100.replit.app" >> "$GITHUB_ENV"
+      - name: Configure production API
+        run: echo "EXPO_PUBLIC_API_URL=https://global-shopping-calculator--specialmen100.replit.app" >> "$GITHUB_ENV"
 
-      - الاسم: بناء ملف تنفيذي لنظام Android
-        دليل العمل: artifacts/caddycheck
-        تشغيل: |
-          بناء سهل
+      - name: Build Android binary
+        working-directory: artifacts/caddycheck
+        run: |
+          eas build \
             --profile "${{ matrix.profile }}" \
-            --platform android
-            --غير تفاعلي
-            --انتظر \
+            --platform android \
+            --non-interactive \
+            --wait \
             --json > eas-build.json
 
-      - الاسم: تنزيل ملفات Android الثنائية
-        دليل العمل: artifacts/caddycheck
-        تشغيل: |
-          BUILD_URL="$(node ​​-e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync("eas-build.json","utf8")); const build=Array.isArray(value) ? value[0] : value; process.stdout.write(build?.artifacts?.buildUrl || build?.artifacts?.[0]?.buildUrl || "")')"
-          اختبار -n "$BUILD_URL"
+      - name: Download Android binary
+        working-directory: artifacts/caddycheck
+        run: |
+          BUILD_URL="$(node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync("eas-build.json","utf8")); const build=Array.isArray(value) ? value[0] : value; process.stdout.write(build?.artifacts?.buildUrl || build?.artifacts?.[0]?.buildUrl || "")')"
+          test -n "$BUILD_URL"
           curl --fail --location --retry 3 "$BUILD_URL" -o "${{ matrix.artifact }}"
 
-      - الاسم: تحميل ملف ثنائي لنظام أندرويد
-        الاستخدامات: actions/upload-artifact@v4
-        مع:
-          الاسم: CaddyCheck-${{ matrix.profile }}-${{ github.run_number }}
-          المسار: artifacts/caddycheck/${{ matrix.artifact }}
-          خطأ في حالة عدم العثور على ملفات
+      - name: Upload Android binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: CaddyCheck-${{ matrix.profile }}-${{ github.run_number }}
+          path: artifacts/caddycheck/${{ matrix.artifact }}
+          if-no-files-found: error
