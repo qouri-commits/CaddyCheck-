@@ -15,8 +15,7 @@ jobs:
         include:
           - profile: preview
             artifact: CaddyCheck-1.0.1.apk
-          - profile: production
-            artifact: CaddyCheck-1.0.1.aab
+            
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
