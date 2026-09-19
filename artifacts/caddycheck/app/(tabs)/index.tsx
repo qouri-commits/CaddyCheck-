@@ -736,7 +736,8 @@ export default function BasketScreen() {
   const hasBudget    = budget !== null && budget > 0;
   const isOverBudget = hasBudget && basketTotal > budget!;
   const webTopPad    = Platform.OS === "web" ? 67 : 0;
-  const bottomPad    = Platform.OS === "web" ? 34 : 0;
+  const navigationClearance = Platform.OS === "web" ? 84 : insets.bottom + 64;
+  const fabBottom = navigationClearance + 16;
   const panelBg      = isOverBudget ? colors.destructive : colors.primary;
 
   return (
@@ -952,6 +953,7 @@ export default function BasketScreen() {
             </Text>
             <TouchableOpacity
               onPress={() => router.push("/scan")}
+              testID="empty-basket-scan"
               style={[styles.emptyCta, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
               activeOpacity={0.85}
               accessibilityRole="button"
@@ -966,21 +968,22 @@ export default function BasketScreen() {
         )}
         contentContainerStyle={
           items.length === 0
-            ? styles.emptyList
-            : { paddingBottom: 120 + (Platform.OS === "web" ? bottomPad : insets.bottom) }
+            ? [styles.emptyList, { paddingBottom: navigationClearance + 16 }]
+            : { paddingBottom: fabBottom + 64 + 16 }
         }
-        scrollEnabled={!!items.length}
+        style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
       />
 
-      {/* FAB */}
-      <TouchableOpacity
+      {/* The empty state already has a scan action; do not overlay a duplicate. */}
+      {items.length > 0 && <TouchableOpacity
         onPress={() => router.push("/scan")}
+        testID="basket-add-product"
         style={[
           styles.fab,
           {
             backgroundColor: colors.primary,
-            bottom: Platform.OS === "web" ? 84 + 16 : insets.bottom + 80,
+            bottom: fabBottom,
             shadowColor: colors.primary,
           },
         ]}
@@ -989,7 +992,7 @@ export default function BasketScreen() {
         accessibilityLabel={t("scanBarcode")}
       >
         <Ionicons name="add" size={32} color="#fff" />
-      </TouchableOpacity>
+      </TouchableOpacity>}
 
       <LanguageSheet visible={langSheetVisible} onClose={() => setLangSheetVisible(false)} />
 
@@ -1083,12 +1086,12 @@ const styles = StyleSheet.create({
   trendChipText: { fontSize: 11 },
   chartBtn: { width: 32, height: 32, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   deleteAction: { justifyContent: "center", alignItems: "center", width: 80 },
-  emptyContainer: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingTop: 80 },
+  emptyContainer: { flex: 1, minHeight: 260, alignItems: "center", justifyContent: "center", gap: 12, paddingVertical: 24, paddingHorizontal: 16 },
   emptyTitle: { fontSize: 20 },
   emptySubtitle: { fontSize: 14, textAlign: "center", paddingHorizontal: 40 },
-  emptyCta: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 24, paddingVertical: 14, marginTop: 8 },
-  emptyCtaText: { color: "#fff", fontSize: 15 },
-  emptyList: { flex: 1 },
+  emptyCta: { flexDirection: "row", alignItems: "center", justifyContent: "center", maxWidth: "100%", minHeight: 48, gap: 8, paddingHorizontal: 24, paddingVertical: 14, marginTop: 8 },
+  emptyCtaText: { color: "#fff", fontSize: 15, flexShrink: 1, textAlign: "center" },
+  emptyList: { flexGrow: 1 },
   tipsOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", alignItems: "center", justifyContent: "center", padding: 24 },
   tipsCard: { width: "100%", maxWidth: 360, padding: 24, gap: 16 },
   tipsTitle: { fontSize: 19, marginBottom: 4 },
