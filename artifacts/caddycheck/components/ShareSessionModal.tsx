@@ -87,8 +87,12 @@ export function ShareSessionModal({ visible, onClose }: Props) {
   };
 
   const handleEnd = async () => {
-    await endSession();
-    onClose();
+    try {
+      await endSession();
+      onClose();
+    } catch {
+      Alert.alert(t("errorTitle"));
+    }
   };
 
   const pendingReminders = sessionReminders.filter((r) => !r.done);

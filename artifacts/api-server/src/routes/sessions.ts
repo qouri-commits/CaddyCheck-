@@ -1,269 +1,118 @@
-import { Router, type IRouter } from "express";
-import { randomBytes } from "crypto";
 import { eq, lt } from "drizzle-orm";
-import { z } from "zod";
 import { db, sessionsTable } from "@workspace/db";
+import {
+  createSessionsRouter,
+  tokensEqual,
+  type MutationResult,
+  type SessionRecord,
+  type SessionRepository,
+} from "./sessions-router";
 
-// Define schemas locally to avoid cross-package zod instance issues
-const SessionBasketItemSchema = z.object({
-  id:       z.string(),
-  name:     z.string(),
-  price:    z.number(),
-  quantity: z.number(),
-  barcode:  z.string().optional(),
-  imageUrl: z.string().optional(),
-});
-
-const router: IRouter = Router();
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-
-function generateCode(): string {
-  const bytes = randomBytes(6);
-  return Array.from(bytes, (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
+function asRecord(session: typeof sessionsTable.$inferSelect): SessionRecord {
+  return session;
 }
 
-function generateToken(): string {
-  return randomBytes(32).toString("hex");
-}
+const repository: SessionRepository = {
+  async cleanExpired(now) {
+    await db.delete(sessionsTable).where(lt(sessionsTable.expiresAt, now));
+  },
 
-function sessionExpiry(): Date {
-  const d = new Date();
-  d.setHours(d.getHours() + 12);
-  return d;
-}
+  async create(input) {
+    const [session] = await db
+      .insert(sessionsTable)
+      .values({ ...input, basket: [], reminders: [] })
+      .returning();
+    return asRecord(session);
+  },
 
-async function cleanExpired() {
-  await db.delete(sessionsTable).where(lt(sessionsTable.expiresAt, new Date()));
-}
-
-// ─── POST /api/sessions  — create a new session ───────────────────────────────
-const CreateSessionBody = z.object({
-  hostName: z.string().min(1).max(50),
-  currency: z.string().max(5).optional(),
-});
-
-router.post("/sessions", async (req, res) => {
-  const parsed = CreateSessionBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid body" });
-    return;
-  }
-
-  await cleanExpired();
-
-  const code = generateCode();
-  const hostToken = generateToken();
-
-  const [session] = await db
-    .insert(sessionsTable)
-    .values({
-      code,
-      hostToken,
-      hostName: parsed.data.hostName,
-      basket: [],
-      reminders: [],
-      currency: parsed.data.currency ?? "MAD",
-      expiresAt: sessionExpiry(),
-    })
-    .returning();
-
-  res.status(201).json({
-    id: session.id,
-    code: session.code,
-    hostToken: session.hostToken,
-    expiresAt: session.expiresAt,
-  });
-});
-
-// ─── GET /api/sessions/:code  — get session state ────────────────────────────
-router.get("/sessions/:code", async (req, res) => {
-  await cleanExpired();
-
-  const session = await db.query.sessionsTable.findFirst({
-    where: eq(sessionsTable.code, req.params.code.toUpperCase()),
-  });
-
-  if (!session) {
-    res.status(404).json({ error: "Session not found or expired" });
-    return;
-  }
-
-  res.json({
-    code: session.code,
-    hostName: session.hostName,
-    basket: session.basket,
-    reminders: session.reminders,
-    currency: session.currency,
-    updatedAt: session.updatedAt,
-    expiresAt: session.expiresAt,
-  });
-});
-
-// ─── PUT /api/sessions/:code/basket  — host updates basket ───────────────────
-const UpdateBasketBody = z.object({
-  basket: z.array(SessionBasketItemSchema),
-  currency: z.string().max(5).optional(),
-});
-
-router.put("/sessions/:code/basket", async (req, res) => {
-  const hostToken = req.headers["x-host-token"];
-  if (!hostToken || typeof hostToken !== "string") {
-    res.status(401).json({ error: "Missing host token" });
-    return;
-  }
-
-  const parsed = UpdateBasketBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid body" });
-    return;
-  }
-
-  const session = await db.query.sessionsTable.findFirst({
-    where: eq(sessionsTable.code, req.params.code.toUpperCase()),
-  });
-
-  if (!session || session.expiresAt <= new Date()) {
-    res.status(404).json({ error: "Session not found" });
-    return;
-  }
-
-  if (session.hostToken !== hostToken) {
-    res.status(403).json({ error: "Invalid host token" });
-    return;
-  }
-
-  const [updated] = await db
-    .update(sessionsTable)
-    .set({
-      basket: parsed.data.basket,
-      currency: parsed.data.currency ?? session.currency,
-      updatedAt: new Date(),
-      expiresAt: sessionExpiry(),
-    })
-    .where(eq(sessionsTable.id, session.id))
-    .returning();
-
-  res.json({ updatedAt: updated.updatedAt });
-});
-
-// ─── POST /api/sessions/:code/reminders  — viewer adds reminder ──────────────
-const AddReminderBody = z.object({
-  name: z.string().min(1).max(100),
-  addedBy: z.string().max(50).optional(),
-});
-
-router.post("/sessions/:code/reminders", async (req, res) => {
-  const parsed = AddReminderBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: "Invalid body" });
-    return;
-  }
-
-  const newReminder = {
-    id: randomBytes(8).toString("hex"),
-    name: parsed.data.name,
-    addedBy: parsed.data.addedBy,
-    addedAt: new Date().toISOString(),
-    done: false,
-  };
-
-  // Use a row lock (SELECT ... FOR UPDATE) so concurrent viewers appending
-  // reminders at the same time can't clobber each other's writes.
-  const notFound = await db.transaction(async (tx) => {
-    const [locked] = await tx
-      .select({ id: sessionsTable.id, reminders: sessionsTable.reminders })
-      .from(sessionsTable)
-      .where(eq(sessionsTable.code, req.params.code.toUpperCase()))
-      .for("update");
-
-    if (!locked) return true;
-
-    const current = await tx.query.sessionsTable.findFirst({
-      where: eq(sessionsTable.id, locked.id),
+  async findByCode(code) {
+    const session = await db.query.sessionsTable.findFirst({
+      where: eq(sessionsTable.code, code),
     });
-    if (!current || current.expiresAt <= new Date()) return true;
+    return session ? asRecord(session) : undefined;
+  },
 
-    const updatedReminders = [...(locked.reminders ?? []), newReminder];
+  async updateBasket(input): Promise<MutationResult> {
+    return db.transaction(async (tx) => {
+      const [session] = await tx
+        .select()
+        .from(sessionsTable)
+        .where(eq(sessionsTable.code, input.code))
+        .for("update");
+      if (!session || session.expiresAt <= input.now) return { status: "notFound" };
+      if (!tokensEqual(session.hostToken, input.hostToken)) return { status: "forbidden" };
 
-    await tx
-      .update(sessionsTable)
-      .set({ reminders: updatedReminders, updatedAt: new Date() })
-      .where(eq(sessionsTable.id, locked.id));
+      const [updated] = await tx
+        .update(sessionsTable)
+        .set({
+          basket: input.basket,
+          currency: input.currency ?? session.currency,
+          updatedAt: input.now,
+          expiresAt: input.expiresAt,
+        })
+        .where(eq(sessionsTable.id, session.id))
+        .returning();
+      return { status: "ok", updatedAt: updated.updatedAt };
+    });
+  },
 
-    return false;
-  });
+  async addReminder(input): Promise<MutationResult> {
+    return db.transaction(async (tx) => {
+      const [session] = await tx
+        .select()
+        .from(sessionsTable)
+        .where(eq(sessionsTable.code, input.code))
+        .for("update");
+      if (!session || session.expiresAt <= input.now) return { status: "notFound" };
+      if (session.reminders.length >= input.maxReminders) return { status: "limit" };
 
-  if (notFound) {
-    res.status(404).json({ error: "Session not found" });
-    return;
-  }
+      await tx
+        .update(sessionsTable)
+        .set({ reminders: [...session.reminders, input.reminder], updatedAt: input.now })
+        .where(eq(sessionsTable.id, session.id));
+      return { status: "ok" };
+    });
+  },
 
-  res.status(201).json(newReminder);
-});
+  async completeReminder(input): Promise<MutationResult> {
+    return db.transaction(async (tx) => {
+      const [session] = await tx
+        .select()
+        .from(sessionsTable)
+        .where(eq(sessionsTable.code, input.code))
+        .for("update");
+      if (!session || session.expiresAt <= input.now) return { status: "notFound" };
+      if (!tokensEqual(session.hostToken, input.hostToken)) return { status: "forbidden" };
+      if (!session.reminders.some((reminder) => reminder.id === input.reminderId)) {
+        return { status: "notFound" };
+      }
 
-// ─── PATCH /api/sessions/:code/reminders/:rid  — mark reminder done ──────────
-router.patch("/sessions/:code/reminders/:rid", async (req, res) => {
-  const hostToken = req.headers["x-host-token"];
-  if (!hostToken || typeof hostToken !== "string") {
-    res.status(401).json({ error: "Missing host token" });
-    return;
-  }
+      await tx
+        .update(sessionsTable)
+        .set({
+          reminders: session.reminders.map((reminder) =>
+            reminder.id === input.reminderId ? { ...reminder, done: true } : reminder,
+          ),
+          updatedAt: input.now,
+        })
+        .where(eq(sessionsTable.id, session.id));
+      return { status: "ok" };
+    });
+  },
 
-  const forbidden = await db.transaction(async (tx) => {
-    const [locked] = await tx
-      .select({
-        id: sessionsTable.id,
-        hostToken: sessionsTable.hostToken,
-        reminders: sessionsTable.reminders,
-        expiresAt: sessionsTable.expiresAt,
-      })
-      .from(sessionsTable)
-      .where(eq(sessionsTable.code, req.params.code.toUpperCase()))
-      .for("update");
+  async delete(input): Promise<MutationResult> {
+    return db.transaction(async (tx) => {
+      const [session] = await tx
+        .select()
+        .from(sessionsTable)
+        .where(eq(sessionsTable.code, input.code))
+        .for("update");
+      if (!session || session.expiresAt <= input.now) return { status: "notFound" };
+      if (!tokensEqual(session.hostToken, input.hostToken)) return { status: "forbidden" };
+      await tx.delete(sessionsTable).where(eq(sessionsTable.id, session.id));
+      return { status: "ok" };
+    });
+  },
+};
 
-    if (!locked || locked.hostToken !== hostToken || locked.expiresAt <= new Date()) return true;
-
-    const updatedReminders = (locked.reminders ?? []).map((r) =>
-      r.id === req.params.rid ? { ...r, done: true } : r
-    );
-
-    await tx
-      .update(sessionsTable)
-      .set({ reminders: updatedReminders, updatedAt: new Date() })
-      .where(eq(sessionsTable.id, locked.id));
-
-    return false;
-  });
-
-  if (forbidden) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-
-  res.json({ ok: true });
-});
-
-// ─── DELETE /api/sessions/:code  — host ends session ─────────────────────────
-router.delete("/sessions/:code", async (req, res) => {
-  const hostToken = req.headers["x-host-token"];
-  if (!hostToken || typeof hostToken !== "string") {
-    res.status(401).json({ error: "Missing host token" });
-    return;
-  }
-
-  const session = await db.query.sessionsTable.findFirst({
-    where: eq(sessionsTable.code, req.params.code.toUpperCase()),
-  });
-
-  if (!session || session.hostToken !== hostToken || session.expiresAt <= new Date()) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-
-  await db.delete(sessionsTable).where(eq(sessionsTable.id, session.id));
-  res.json({ ok: true });
-});
-
-export default router;
+export default createSessionsRouter(repository);

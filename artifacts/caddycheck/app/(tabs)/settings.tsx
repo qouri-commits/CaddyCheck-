@@ -1,24 +1,22 @@
-import React, { useEffect, useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as DocumentPicker from "expo-document-picker";
+import { router } from "expo-router";
 
 import { useColors } from "@/hooks/useColors";
 import { useLanguage, Theme, CURRENCY_SYMBOLS } from "@/context/LanguageContext";
@@ -52,6 +50,79 @@ const THEMES: { mode: Theme; labelKey: "lightMode" | "darkMode" | "themeSystem";
   { mode: "system",labelKey: "themeSystem",icon: "phone-portrait-outline" },
 ];
 
+const MAX_BACKUP_BYTES = 5 * 1024 * 1024;
+
+function utf8ByteLength(value: string): number {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff && index + 1 < value.length && value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff) {
+      bytes += 4;
+      index += 1;
+    } else bytes += 3;
+  }
+  return bytes;
+}
+
+function safeBackupValidationPath(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const message = error.message.replace(/^Invalid backup:\s*/, "");
+  const boundary = message.search(/\s(?:must|does|contains|is)\b/);
+  if (boundary <= 0) return null;
+  const path = message
+    .slice(0, boundary)
+    .replace(/\["[^"]*"\]/g, "[…]")
+    .replace(/[^A-Za-z0-9_.\[\]… -]/g, "");
+  return path.startsWith("backup") && path.length <= 120 ? path : null;
+}
+
+const SCREEN_COPY = {
+  en: {
+    privacyHelp: "Privacy & help",
+    privacySummary: "Barcode lookups contact OpenFoodFacts only when you scan or enter a barcode. Basket data is sent to CaddyCheck only when you start a live sharing session. CaddyCheck does not have an analytics-sharing switch.",
+    deleteShopping: "Delete shopping data",
+    deleteDetail: "Deletes the basket, saved trips, price history, product cache, budget, store history/custom stores, and live-session details from this device. Language, currency, region, appearance, onboarding, and help-tip preferences stay.",
+    deleteQuestion: "Delete shopping data?",
+    invalidBackup: "This is not a valid CaddyCheck backup, or its version is not supported.",
+    backupTooLarge: "This backup is larger than 5 MB and cannot be imported.",
+    backupReadFailed: "The selected file could not be read. Choose a local JSON backup and try again.",
+    exportUnavailable: "Sharing is not available on this device, so the backup could not be exported.",
+    validationField: "Problem field",
+    validationAdvice: "Export a fresh backup from CaddyCheck and import the JSON file without editing it.",
+    basketCurrencyBlocked: "Finish and save or clear the current basket before changing its currency or home region. Existing prices will not be relabeled.",
+  },
+  fr: {
+    privacyHelp: "Confidentialité et aide",
+    privacySummary: "Une recherche de code-barres contacte OpenFoodFacts uniquement lorsque vous scannez ou saisissez un code. Le panier est envoyé à CaddyCheck uniquement si vous démarrez une session de partage. Il n’existe pas d’interrupteur de partage analytique.",
+    deleteShopping: "Supprimer les données d’achats",
+    deleteDetail: "Supprime le panier, les courses, l’historique des prix, le cache, le budget, l’historique/les magasins personnalisés et la session de cet appareil. La langue, la devise, la région, l’apparence, l’accueil et les astuces restent.",
+    deleteQuestion: "Supprimer les données d’achats ?",
+    invalidBackup: "Ce fichier n’est pas une sauvegarde CaddyCheck valide ou sa version n’est pas prise en charge.",
+    backupTooLarge: "Cette sauvegarde dépasse 5 Mo et ne peut pas être importée.",
+    backupReadFailed: "Impossible de lire le fichier sélectionné. Choisissez une sauvegarde JSON locale et réessayez.",
+    exportUnavailable: "Le partage n’est pas disponible sur cet appareil ; la sauvegarde n’a pas été exportée.",
+    validationField: "Champ concerné",
+    validationAdvice: "Exportez une nouvelle sauvegarde depuis CaddyCheck, puis importez le fichier JSON sans le modifier.",
+    basketCurrencyBlocked: "Terminez et enregistrez ou videz le panier actuel avant de changer sa devise ou votre région. Les prix existants ne seront pas réétiquetés.",
+  },
+  ar: {
+    privacyHelp: "الخصوصية والمساعدة",
+    privacySummary: "يتصل البحث عن الباركود بخدمة OpenFoodFacts فقط عند مسح باركود أو إدخاله. ولا تُرسل السلة إلى CaddyCheck إلا عند بدء جلسة مشاركة مباشرة. لا يوجد مفتاح لمشاركة بيانات التحليلات.",
+    deleteShopping: "حذف بيانات التسوق",
+    deleteDetail: "يحذف السلة والرحلات وسجل الأسعار وذاكرة المنتجات والميزانية وسجل/قائمة المتاجر المخصصة وبيانات الجلسة من هذا الجهاز. تبقى تفضيلات اللغة والعملة والمنطقة والمظهر وشاشة البدء والنصائح.",
+    deleteQuestion: "حذف بيانات التسوق؟",
+    invalidBackup: "هذا الملف ليس نسخة CaddyCheck صالحة أو أن إصداره غير مدعوم.",
+    backupTooLarge: "حجم النسخة أكبر من 5 ميغابايت ولا يمكن استيرادها.",
+    backupReadFailed: "تعذرت قراءة الملف المحدد. اختر نسخة JSON محلية وحاول مجددًا.",
+    exportUnavailable: "المشاركة غير متاحة على هذا الجهاز، لذلك لم يتم تصدير النسخة.",
+    validationField: "الحقل الذي يحتوي على المشكلة",
+    validationAdvice: "صدّر نسخة جديدة من CaddyCheck ثم استورد ملف JSON من دون تعديله.",
+    basketCurrencyBlocked: "أكمل السلة الحالية واحفظها أو أفرغها قبل تغيير العملة أو المنطقة. لن نغيّر تسمية الأسعار الموجودة تلقائيًا.",
+  },
+} as const;
+
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -60,33 +131,37 @@ export default function SettingsScreen() {
     currency, changeCurrency, theme, changeTheme,
     homeRegionId, homeRegionLabel, changeRegion,
   } = useLanguage();
-  const { clearAll, exportBackup, importBackup } = useBasket();
+  const { items, clearAll, exportBackup, importBackup } = useBasket()!;
 
-  const [dataSharing,       setDataSharing]       = useState(true);
   const [langSheetVisible,  setLangSheetVisible]  = useState(false);
   const [regionSheetVisible,setRegionSheetVisible]= useState(false);
-  const [privacyVisible,    setPrivacyVisible]     = useState(false);
   const [aboutVisible,      setAboutVisible]       = useState(false);
   const [backupBusy,        setBackupBusy]         = useState(false);
+  const backupBusyRef = useRef(false);
+  const copy = SCREEN_COPY[language];
 
   const webTopPad = Platform.OS === "web" ? 67 : 0;
 
-  // Load persisted dataSharing preference
-  useEffect(() => {
-    AsyncStorage.getItem("caddycheck_data_sharing").then((v) => {
-      if (v !== null) setDataSharing(v === "true");
-    });
-  }, []);
+  const requireEmptyBasketForCurrencyChange = () => {
+    if (items.length === 0) return true;
+    Alert.alert(t("currency_label"), copy.basketCurrencyBlocked);
+    return false;
+  };
 
-  const handleToggleDataSharing = async (val: boolean) => {
-    await Haptics.selectionAsync();
-    setDataSharing(val);
-    await AsyncStorage.setItem("caddycheck_data_sharing", String(val));
+  const beginBackupOperation = () => {
+    if (backupBusyRef.current) return false;
+    backupBusyRef.current = true;
+    setBackupBusy(true);
+    return true;
+  };
+
+  const endBackupOperation = () => {
+    backupBusyRef.current = false;
+    setBackupBusy(false);
   };
 
   const handleExportBackup = async () => {
-    if (backupBusy) return;
-    setBackupBusy(true);
+    if (!beginBackupOperation()) return;
     try {
       const data = await exportBackup();
       const json = JSON.stringify(data, null, 2);
@@ -114,56 +189,80 @@ export default function SettingsScreen() {
             dialogTitle: t("exportBackup"),
           });
         } else {
-          Alert.alert(t("errorTitle"), t("backupFailed"));
+          Alert.alert(t("errorTitle"), copy.exportUnavailable);
+          return;
         }
       }
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (Platform.OS === "web") {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
     } catch {
       Alert.alert(t("errorTitle"), t("backupFailed"));
     } finally {
-      setBackupBusy(false);
+      endBackupOperation();
     }
   };
 
   const handleImportBackup = async () => {
-    if (backupBusy) return;
-    setBackupBusy(true);
+    if (!beginBackupOperation()) return;
+    let fileWasRead = false;
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: "application/json",
         copyToCacheDirectory: true,
       });
       if (result.canceled || !result.assets?.[0]) {
-        setBackupBusy(false);
         return;
       }
-      const content = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+      const asset = result.assets[0];
+      let fileSize = asset.size;
+      if (fileSize == null) {
+        const info = await FileSystem.getInfoAsync(asset.uri);
+        fileSize = info.exists && "size" in info ? info.size : undefined;
+      }
+      if (fileSize != null && fileSize > MAX_BACKUP_BYTES) {
+        Alert.alert(t("errorTitle"), copy.backupTooLarge);
+        return;
+      }
+      const content = await FileSystem.readAsStringAsync(asset.uri, {
         encoding: FileSystem.EncodingType.UTF8,
       });
-      const parsed = JSON.parse(content);
-      if (typeof parsed !== "object" || parsed === null) {
-        throw new Error("invalid");
+      fileWasRead = true;
+      if (utf8ByteLength(content) > MAX_BACKUP_BYTES) {
+        Alert.alert(t("errorTitle"), copy.backupTooLarge);
+        return;
       }
+      const parsed = JSON.parse(content);
       await importBackup(parsed);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       Alert.alert("", t("restoreSuccess"));
-    } catch {
-      Alert.alert(t("errorTitle"), t("restoreFailed"));
+    } catch (error) {
+      if (!fileWasRead) {
+        Alert.alert(t("errorTitle"), copy.backupReadFailed);
+      } else {
+        const safePath = safeBackupValidationPath(error);
+        const detail = safePath ? `\n${copy.validationField}: ${safePath}` : "";
+        Alert.alert(t("errorTitle"), `${copy.invalidBackup}\n${copy.validationAdvice}${detail}`);
+      }
     } finally {
-      setBackupBusy(false);
+      endBackupOperation();
     }
   };
 
   const handleDeleteData = () => {
-    Alert.alert(t("confirmDelete"), t("deleteAllData"), [
+    Alert.alert(copy.deleteQuestion, copy.deleteDetail, [
       { text: t("cancel"), style: "cancel" },
       {
         text: t("confirm"),
         style: "destructive",
         onPress: async () => {
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          await clearAll();
-          Alert.alert("", t("dataDeleted"));
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+          try {
+            await clearAll();
+            Alert.alert("", t("dataDeleted"));
+          } catch {
+            Alert.alert(t("errorTitle"), language === "ar" ? "تعذّر حذف البيانات. حاول مرة أخرى." : language === "fr" ? "Impossible de supprimer les données. Réessayez." : "Could not delete data. Please retry.");
+          }
         },
       },
     ]);
@@ -200,6 +299,7 @@ export default function SettingsScreen() {
     rightElement,
     destructive,
     noBorder,
+    disabled,
   }: {
     icon: keyof typeof Ionicons.glyphMap;
     label: string;
@@ -208,10 +308,11 @@ export default function SettingsScreen() {
     rightElement?: React.ReactNode;
     destructive?: boolean;
     noBorder?: boolean;
+    disabled?: boolean;
   }) => (
     <TouchableOpacity
       onPress={onPress}
-      disabled={!onPress && !rightElement}
+      disabled={disabled || (!onPress && !rightElement)}
       activeOpacity={onPress ? 0.6 : 1}
       style={[
         styles.settingRow,
@@ -219,6 +320,7 @@ export default function SettingsScreen() {
       ]}
       accessibilityRole={onPress ? "button" : undefined}
       accessibilityLabel={value ? `${label}, ${value}` : label}
+      accessibilityState={{ disabled: !!disabled }}
     >
       <View
         style={[
@@ -330,7 +432,8 @@ export default function SettingsScreen() {
                     key={c.code}
                     onPress={async () => {
                       if (active) return;
-                      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      if (!requireEmptyBasketForCurrencyChange()) return;
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
                       await changeCurrency(c.code);
                     }}
                     style={[
@@ -443,24 +546,21 @@ export default function SettingsScreen() {
           </View>
         </Section>
 
-        {/* Privacy */}
         <Section title="">
-          <SettingRow
-            icon="analytics-outline"
-            label={t("dataSharing")}
-            rightElement={
-              <Switch
-                value={dataSharing}
-                onValueChange={handleToggleDataSharing}
-                trackColor={{ true: colors.primary }}
-                thumbColor="#fff"
-              />
-            }
-          />
-        </Section>
-
-        <Section title="">
-          <SettingRow icon="shield-outline" label={t("privacyPolicy")} onPress={() => setPrivacyVisible(true)} />
+          <View style={[styles.privacySummary, { borderBottomColor: colors.border }]}>
+            <View style={[styles.privacySummaryTitle, { flexDirection }]}>
+              <View style={[styles.iconBox, { backgroundColor: colors.accent, borderRadius: 8 }]}>
+                <Ionicons name="shield-checkmark-outline" size={18} color={colors.primary} />
+              </View>
+              <Text style={[styles.settingLabel, { color: colors.foreground, fontFamily: "Inter_600SemiBold", flex: 1, textAlign }]}>
+                {copy.privacyHelp}
+              </Text>
+            </View>
+            <Text style={[styles.privacySummaryText, { color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign }]}>
+              {copy.privacySummary}
+            </Text>
+          </View>
+          <SettingRow icon="shield-outline" label={copy.privacyHelp} onPress={() => router.push("/privacy-help")} />
           <SettingRow icon="information-circle-outline" label={t("about")} onPress={() => setAboutVisible(true)} noBorder />
         </Section>
 
@@ -471,6 +571,7 @@ export default function SettingsScreen() {
             label={t("exportBackup")}
             onPress={handleExportBackup}
             rightElement={backupBusy ? <ActivityIndicator size="small" color={colors.primary} /> : undefined}
+            disabled={backupBusy}
           />
           <SettingRow
             icon="cloud-download-outline"
@@ -478,11 +579,12 @@ export default function SettingsScreen() {
             onPress={handleImportBackup}
             noBorder
             rightElement={backupBusy ? <ActivityIndicator size="small" color={colors.primary} /> : undefined}
+            disabled={backupBusy}
           />
         </Section>
 
         <Section title="">
-          <SettingRow icon="trash-outline" label={t("deleteAllData")} onPress={handleDeleteData} destructive noBorder />
+          <SettingRow icon="trash-outline" label={copy.deleteShopping} onPress={handleDeleteData} destructive noBorder />
         </Section>
       </ScrollView>
 
@@ -493,38 +595,10 @@ export default function SettingsScreen() {
         onClose={() => setRegionSheetVisible(false)}
         selectedRegionId={homeRegionId}
         onSelect={async (region: Region) => {
+          if (region.id !== homeRegionId && !requireEmptyBasketForCurrencyChange()) return;
           await changeRegion(region.id);
         }}
       />
-
-      {/* Privacy modal */}
-      <Modal
-        visible={privacyVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setPrivacyVisible(false)}
-      >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border, flexDirection }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground, fontFamily: "Inter_700Bold" }]}>
-              {t("privacyPolicy")}
-            </Text>
-            <TouchableOpacity onPress={() => setPrivacyVisible(false)}>
-              <Ionicons name="close" size={24} color={colors.foreground} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView style={styles.modalContent}>
-            <Text
-              style={[
-                styles.modalText,
-                { color: colors.foreground, fontFamily: "Inter_400Regular", textAlign, lineHeight: 24 },
-              ]}
-            >
-              {t("privacyText")}
-            </Text>
-          </ScrollView>
-        </View>
-      </Modal>
 
       {/* About modal */}
       <Modal
@@ -586,6 +660,9 @@ const styles = StyleSheet.create({
   themeChips: { gap: 8 },
   themeChip: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 10, gap: 6 },
   themeChipLabel: { fontSize: 12 },
+  privacySummary: { padding: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  privacySummaryTitle: { alignItems: "center", gap: 12, marginBottom: 10 },
+  privacySummaryText: { fontSize: 13, lineHeight: 20 },
   modalContainer: { flex: 1 },
   modalHeader: { alignItems: "center", justifyContent: "space-between", padding: 20, borderBottomWidth: StyleSheet.hairlineWidth, paddingTop: 56 },
   modalTitle: { fontSize: 20 },

@@ -23,6 +23,7 @@ import { useBasket } from "@/context/BasketContext";
 import { StoreSheet } from "@/components/StoreSheet";
 import { Store } from "@/constants/stores";
 import { Trip, TripItem } from "@/types";
+import { escapeReceiptHtml, parseLocalizedDecimal } from "@/utils/shoppingReceipt";
 
 function generateId() {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -50,18 +51,25 @@ async function shareTripSummary(
 export default function CompareScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { t, isRTL, flexDirection, textAlign, currencySymbol } = useLanguage();
+  const { t, isRTL, flexDirection, textAlign, currencySymbol, language } = useLanguage();
   const { items, basketTotal, clearBasket, saveTrip, updatePriceHistory } = useBasket();
 
   const [receiptTotal, setReceiptTotal] = useState("");
   const [storeSheetVisible, setStoreSheetVisible] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savedStore, setSavedStore] = useState<Store | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const receiptNum = parseFloat(receiptTotal.replace(",", "."));
+  const receiptNum = parseLocalizedDecimal(receiptTotal);
+  const receiptInvalid = receiptTotal.trim() !== "" && (receiptNum === null || receiptNum < 0);
   const hasDifference =
-    receiptTotal.trim() !== "" && !isNaN(receiptNum) && receiptNum !== basketTotal;
-  const diff = hasDifference ? receiptNum - basketTotal : 0;
+    receiptTotal.trim() !== "" && receiptNum !== null && receiptNum >= 0 && receiptNum !== basketTotal;
+  const diff = hasDifference && receiptNum !== null ? receiptNum - basketTotal : 0;
+  const localText = {
+    en: { invalidReceipt: "Enter a valid receipt total using digits and one decimal separator.", invalidBasket: "A product has an invalid price or quantity. Return to the basket and correct it.", saveFailed: "The trip could not be saved. Your basket is unchanged. Please try again." },
+    fr: { invalidReceipt: "Saisissez un total valide avec des chiffres et un seul séparateur décimal.", invalidBasket: "Un produit a un prix ou une quantité invalide. Revenez au panier pour le corriger.", saveFailed: "Le trajet n’a pas pu être enregistré. Votre panier est inchangé. Réessayez." },
+    ar: { invalidReceipt: "أدخل إجماليًا صالحًا باستخدام الأرقام وفاصل عشري واحد.", invalidBasket: "يوجد منتج بسعر أو كمية غير صالحة. ارجع إلى السلة لتصحيحه.", saveFailed: "تعذر حفظ الرحلة. لم تتغير سلتك. حاول مرة أخرى." },
+  }[language];
 
   const pdfLabels = useMemo(
     () => ({
@@ -75,6 +83,14 @@ export default function CompareScreen() {
   );
 
   const handleSave = async (store: Store) => {
+    if (isSaving || saved) return;
+    if (
+      items.length === 0 ||
+      items.some((item) => !item.name.trim() || !Number.isFinite(item.price) || item.price <= 0 || !Number.isSafeInteger(item.quantity) || item.quantity < 1)
+    ) {
+      Alert.alert(t("errorTitle"), localText.invalidBasket);
+      return;
+    }
     const now = new Date();
     const dateStr = now.toLocaleDateString("en-CA");
     const timeStr = now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
@@ -100,23 +116,33 @@ export default function CompareScreen() {
       items: tripItems,
     };
 
-    items.forEach((item) => {
-      if (item.barcode) {
-        updatePriceHistory(item.barcode, {
-          lastPrice: item.price,
-          lastStore: store.name,
-          lastDate: now.toISOString(),
-        });
-      }
-    });
-
-    await saveTrip(trip);
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setSavedStore(store);
-    setSaved(true);
+    setIsSaving(true);
+    try {
+      await saveTrip(trip);
+      items.forEach((item) => {
+        if (item.barcode) {
+          const nextHistory = {
+            lastPrice: item.price,
+            lastStore: store.name,
+            lastDate: now.toISOString(),
+            currency: currencySymbol,
+          };
+          updatePriceHistory(item.barcode, nextHistory);
+        }
+      });
+      setStoreSheetVisible(false);
+      setSavedStore(store);
+      setSaved(true);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } catch {
+      Alert.alert(t("errorTitle"), localText.saveFailed);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleNewTrip = () => {
+    if (!saved) return;
     clearBasket();
     router.replace("/(tabs)");
   };
@@ -128,7 +154,7 @@ export default function CompareScreen() {
       .map(
         (item) => `
       <tr>
-        <td>${item.name}</td>
+        <td>${escapeReceiptHtml(item.name)}</td>
         <td style="text-align:center">${item.price.toFixed(2)}</td>
         <td style="text-align:center">${item.quantity}</td>
         <td style="text-align:center">${(item.price * item.quantity).toFixed(2)}</td>
@@ -158,17 +184,17 @@ export default function CompareScreen() {
           <table>
             <thead>
               <tr>
-                <th>${pdfLabels.product}</th>
-                <th>${pdfLabels.price}</th>
-                <th>${pdfLabels.qty}</th>
-                <th>${pdfLabels.subtotal}</th>
+                 <th>${escapeReceiptHtml(pdfLabels.product)}</th>
+                 <th>${escapeReceiptHtml(pdfLabels.price)}</th>
+                 <th>${escapeReceiptHtml(pdfLabels.qty)}</th>
+                 <th>${escapeReceiptHtml(pdfLabels.subtotal)}</th>
               </tr>
             </thead>
             <tbody>
               ${rows}
               <tr class="total-row">
-                <td colspan="3">${pdfLabels.grandTotal}</td>
-                <td>${basketTotal.toFixed(2)} ${currencySymbol}</td>
+                 <td colspan="3">${escapeReceiptHtml(pdfLabels.grandTotal)}</td>
+                 <td>${basketTotal.toFixed(2)} ${escapeReceiptHtml(currencySymbol)}</td>
               </tr>
             </tbody>
           </table>
@@ -319,7 +345,14 @@ export default function CompareScreen() {
             placeholder="0.00"
             placeholderTextColor={colors.mutedForeground}
             keyboardType="decimal-pad"
+            accessibilityLabel={t("receiptTotal")}
+            testID="compare-receipt-total"
           />
+          {receiptInvalid && (
+            <Text style={[styles.inputError, { color: colors.destructive, fontFamily: "Inter_500Medium", textAlign }]}>
+              {localText.invalidReceipt}
+            </Text>
+          )}
         </View>
 
         {hasDifference && (
@@ -355,7 +388,7 @@ export default function CompareScreen() {
           </View>
         )}
 
-        {!hasDifference && receiptTotal.trim() !== "" && !isNaN(receiptNum) && (
+        {!hasDifference && receiptTotal.trim() !== "" && receiptNum !== null && receiptNum >= 0 && (
           <View
             style={[
               styles.diffCard,
@@ -377,10 +410,13 @@ export default function CompareScreen() {
         <View style={styles.actionButtons}>
           <TouchableOpacity
             onPress={() => setStoreSheetVisible(true)}
+            disabled={isSaving}
             style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel={t("saveTrip")}
+            testID="compare-save-trip"
+            accessibilityState={{ disabled: isSaving, busy: isSaving }}
           >
             <Ionicons name="save-outline" size={20} color="#fff" />
             <Text style={[styles.saveBtnText, { fontFamily: "Inter_700Bold" }]}>{t("saveTrip")}</Text>
@@ -397,6 +433,7 @@ export default function CompareScreen() {
                 activeOpacity={0.7}
                 accessibilityRole="button"
                 accessibilityLabel={t("savePDF")}
+                testID="compare-save-pdf"
               >
                 <Ionicons name="document-text-outline" size={18} color={colors.foreground} />
                 <Text style={[styles.secondaryBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
@@ -413,6 +450,7 @@ export default function CompareScreen() {
               activeOpacity={0.7}
               accessibilityRole="button"
               accessibilityLabel={t("share")}
+              testID="compare-share"
             >
               <Ionicons name="share-social-outline" size={18} color={colors.foreground} />
               <Text style={[styles.secondaryBtnText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
@@ -443,6 +481,7 @@ const styles = StyleSheet.create({
   totalCardCount: { color: "rgba(255,255,255,0.6)", fontSize: 13 },
   inputLabel: { fontSize: 15 },
   receiptInput: { paddingVertical: 18, paddingHorizontal: 20, borderWidth: 1 },
+  inputError: { fontSize: 13, marginTop: 8 },
   diffCard: { flexDirection: "row", alignItems: "center", padding: 16, gap: 12 },
   diffLabel: { fontSize: 20 },
   diffSub: { fontSize: 12 },

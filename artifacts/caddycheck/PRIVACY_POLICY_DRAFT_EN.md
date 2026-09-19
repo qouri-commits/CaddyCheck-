@@ -1,10 +1,11 @@
 # Privacy Policy — CaddyCheck
 
-**Effective date:** [YYYY-MM-DD]  
-**Responsible contact:** [SUPPORT_EMAIL]  
-**Developer or company:** [DEVELOPER_NAME]
+**Last updated:** 19 September 2026; effective upon final publication.
+**Responsible privacy contact:** yanvanitas@gmail.com
+**Publisher name supplied by the publisher:** Vanitas
+**Public policy URL:** [MISSING — PUBLISH AND VERIFY BEFORE RELEASE]
 
-This is a first draft for CaddyCheck. Replace the bracketed fields and publish this text at a public URL before adding it to Google Play Console. Obtain legal review when required for your target markets.
+This is a behavior-based draft, not a published policy or legal approval. Every missing field above must be supplied by the publisher and the final text must be hosted at a verified public URL before release.
 
 ## What the app does
 
@@ -18,9 +19,10 @@ The app may store the following locally on the device:
 - Budget, currency, and region settings.
 - Saved shopping trips and price history.
 - Language and appearance settings.
-- A backup file when the user chooses to export one.
+- Product lookup cache, custom stores, budget, onboarding/help-tip status, and session credentials for an active hosted session.
+- A backup file containing saved trips and price history when the user chooses to export one. The user chooses its destination.
 
-Core use does not require an account. The user can delete local data from the app settings or remove the app from the device.
+Core use does not require an account. “Delete shopping data” clears the basket, saved trips, price history, product cache, budget, store history/custom stores, and local live-session details. It does not clear language, currency, region, appearance, onboarding, or help-tip preferences. Removing the app normally removes its local app storage, subject to the device platform’s backup/restore behavior.
 
 ## Camera and barcodes
 
@@ -28,14 +30,16 @@ The app requests camera access only when the user uses barcode scanning. The app
 
 ## Live sharing
 
-When the user chooses live sharing, the app creates a temporary session and sends the information needed for sharing to the CaddyCheck server, such as the host name, currency, product names, prices, quantities, and reminders. Anyone with the session code may view the session data and add reminders according to the app's features.
+When the user chooses live sharing, the app creates a temporary session and sends the host name entered by the user, currency, product names, prices, quantities, barcodes, product image links, and reminders to the CaddyCheck server. Anyone with the six-character session code may view the session data and add reminders.
 
-Sessions expire after a limited period, and the host can end a session from the app. Do not enter sensitive information, payment-card numbers, or passwords in the basket or reminders.
+Sessions expire 12 hours after creation or the latest basket update. The host can end a session, which requests deletion from the server. If the server is unreachable, local deletion cannot confirm server deletion; expiry remains the fallback. Do not enter sensitive information, payment-card numbers, or passwords in the basket or reminders.
 
 ## Third-party services
 
 - **OpenFoodFacts:** Used for product information lookup when a barcode is searched. Review OpenFoodFacts' current privacy policy and terms.
-- **CaddyCheck server:** Used when the user enables live sharing or another feature that requires the published service.
+- **CaddyCheck server:** Used for live sharing only in the reviewed client behavior. The deployed hosting/database providers and their processing locations are [MISSING — VERIFY BEFORE RELEASE].
+
+The reviewed client code contains no advertising SDK and no arbitrary analytics upload or analytics opt-out switch. This statement must be rechecked against the exact release build and all platform SDK disclosures before publication.
 
 ## Security
 
@@ -51,6 +55,4 @@ This policy may be updated when the app's features or connected services change.
 
 ## Contact
 
-For privacy questions, contact:
-
-`[SUPPORT_EMAIL]`
+For support, privacy questions, or deletion requests: [yanvanitas@gmail.com](mailto:yanvanitas@gmail.com). Please do not send passwords, host tokens, payment details, or sensitive shopping information by email.

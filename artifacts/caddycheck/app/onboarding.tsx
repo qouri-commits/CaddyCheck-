@@ -56,9 +56,8 @@ function SlideItem({ slide }: { slide: Slide }) {
 export default function OnboardingScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { t, isRTL, flexDirection } = useLanguage();
+  const { t, language, isRTL, flexDirection } = useLanguage();
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [agreed, setAgreed] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
   const handleNext = async () => {
@@ -71,13 +70,17 @@ export default function OnboardingScreen() {
   };
 
   const handleStart = async () => {
-    if (!agreed) return;
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await AsyncStorage.setItem("onboarded", "true");
     router.replace("/(tabs)");
   };
 
   const isLast = currentIndex === SLIDES.length - 1;
+  const privacyCopy = {
+    en: { notice: "Your shopping data stays on this device unless you explicitly look up a barcode or start a live sharing session.", link: "Read privacy & help" },
+    fr: { notice: "Vos données restent sur cet appareil, sauf si vous recherchez un code-barres ou démarrez une session de partage.", link: "Lire confidentialité et aide" },
+    ar: { notice: "تبقى بيانات التسوق على هذا الجهاز إلا إذا طلبت البحث عن باركود أو بدأت جلسة مشاركة مباشرة.", link: "اقرأ الخصوصية والمساعدة" },
+  }[language];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -104,6 +107,7 @@ export default function OnboardingScreen() {
                 width: i === currentIndex ? 24 : 8,
               },
             ]}
+            accessibilityLabel={`${i + 1} / ${SLIDES.length}`}
           />
         ))}
       </View>
@@ -115,39 +119,29 @@ export default function OnboardingScreen() {
         ]}
       >
         {isLast && (
-          <TouchableOpacity
-            onPress={() => setAgreed((v) => !v)}
-            style={[styles.agreeRow, { flexDirection }]}
-            activeOpacity={0.7}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: agreed }}
-            accessibilityLabel={t("agree")}
-          >
-            <View
-              style={[
-                styles.checkbox,
-                {
-                  borderColor: agreed ? colors.primary : colors.border,
-                  backgroundColor: agreed ? colors.primary : "transparent",
-                  borderRadius: 6,
-                },
-              ]}
-            >
-              {agreed && <Ionicons name="checkmark" size={14} color="#fff" />}
-            </View>
-            <Text style={[styles.agreeText, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
-              {t("agree")}
+          <View style={[styles.privacyNotice, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+            <Text style={[styles.privacyText, { color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: isRTL ? "right" : "left" }]}>
+              {privacyCopy.notice}
             </Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push("/privacy-help")}
+              accessibilityRole="link"
+              accessibilityLabel={privacyCopy.link}
+              testID="onboarding-privacy-link"
+            >
+              <Text style={[styles.privacyLink, { color: colors.primary, fontFamily: "Inter_600SemiBold", textAlign: isRTL ? "right" : "left" }]}>
+                {privacyCopy.link}
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         <TouchableOpacity
           onPress={isLast ? handleStart : handleNext}
-          disabled={isLast && !agreed}
           style={[
             styles.btn,
             {
-              backgroundColor: isLast && !agreed ? colors.muted : colors.primary,
+              backgroundColor: colors.primary,
               borderRadius: colors.radius,
             },
           ]}
@@ -158,7 +152,7 @@ export default function OnboardingScreen() {
           <Text
             style={[
               styles.btnText,
-              { color: isLast && !agreed ? colors.mutedForeground : "#fff", fontFamily: "Inter_700Bold" },
+              { color: "#fff", fontFamily: "Inter_700Bold" },
             ]}
           >
             {isLast ? t("start") : t("next" as Parameters<typeof t>[0])}
@@ -167,7 +161,7 @@ export default function OnboardingScreen() {
             <Ionicons
               name={isRTL ? "arrow-back" : "arrow-forward"}
               size={20}
-              color={isLast && !agreed ? colors.mutedForeground : "#fff"}
+              color="#fff"
             />
           )}
         </TouchableOpacity>
@@ -186,9 +180,9 @@ const styles = StyleSheet.create({
   dots: { flexDirection: "row", justifyContent: "center", gap: 8, marginBottom: 16 },
   dot: { height: 8, borderRadius: 4 },
   footer: { gap: 16 },
-  agreeRow: { alignItems: "flex-start", gap: 12 },
-  checkbox: { width: 22, height: 22, borderWidth: 2, alignItems: "center", justifyContent: "center", marginTop: 2, flexShrink: 0 },
-  agreeText: { flex: 1, fontSize: 13, lineHeight: 20 },
+  privacyNotice: { padding: 14, borderWidth: StyleSheet.hairlineWidth, gap: 8 },
+  privacyText: { fontSize: 13, lineHeight: 20 },
+  privacyLink: { fontSize: 14, lineHeight: 20 },
   btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 16, gap: 8 },
   btnText: { fontSize: 17 },
 });

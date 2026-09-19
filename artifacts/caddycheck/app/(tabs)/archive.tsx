@@ -21,10 +21,12 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useBasket } from "@/context/BasketContext";
 import { PriceTrendModal } from "@/components/PriceTrendModal";
 import { Trip, TripItem } from "@/types";
+import { escapeReceiptHtml, summarizeTripsByCurrency } from "@/utils/shoppingReceipt";
 
 interface SelectedProduct {
   name: string;
   barcode?: string;
+  currency: string;
 }
 
 function formatDate(dateStr: string): string {
@@ -55,7 +57,7 @@ async function exportTripPDF(
     .map(
       (item) => `
     <tr>
-      <td>${item.name}</td>
+       <td>${escapeReceiptHtml(item.name)}</td>
       <td style="text-align:center">${item.price.toFixed(2)}</td>
       <td style="text-align:center">${item.quantity}</td>
       <td style="text-align:center">${item.subtotal.toFixed(2)}</td>
@@ -81,21 +83,21 @@ async function exportTripPDF(
       </head>
       <body>
         <h1>CaddyCheck</h1>
-        <div class="meta">${trip.date} ${trip.time} — ${trip.store}</div>
+         <div class="meta">${escapeReceiptHtml(trip.date)} ${escapeReceiptHtml(trip.time)} — ${escapeReceiptHtml(trip.store)}</div>
         <table>
           <thead>
             <tr>
-              <th>${labels.product}</th>
-              <th>${labels.price}</th>
-              <th>${labels.qty}</th>
-              <th>${labels.subtotal}</th>
+               <th>${escapeReceiptHtml(labels.product)}</th>
+               <th>${escapeReceiptHtml(labels.price)}</th>
+               <th>${escapeReceiptHtml(labels.qty)}</th>
+               <th>${escapeReceiptHtml(labels.subtotal)}</th>
             </tr>
           </thead>
           <tbody>
             ${rows}
             <tr class="total-row">
-              <td colspan="3">${labels.grandTotal}</td>
-              <td>${trip.total.toFixed(2)} ${currencyLabel}</td>
+               <td colspan="3">${escapeReceiptHtml(labels.grandTotal)}</td>
+               <td>${trip.total.toFixed(2)} ${escapeReceiptHtml(currencyLabel)}</td>
             </tr>
           </tbody>
         </table>
@@ -153,6 +155,7 @@ function TripRow({
         activeOpacity={0.7}
         accessibilityRole="button"
         accessibilityLabel={`${trip.store} · ${trip.total.toFixed(2)} ${trip.currency}`}
+        testID={`archive-trip-${trip.id}`}
       >
         <View style={[styles.storeIconBox, { backgroundColor: colors.accent, borderRadius: 10 }]}>
           <Ionicons name={storeIconName} size={20} color={colors.primary} />
@@ -194,6 +197,7 @@ function TripRow({
               ]}
               accessibilityRole="button"
               accessibilityLabel={item.name}
+              testID={`archive-item-${item.id}`}
             >
               <View style={{ flex: 1 }}>
                 <Text
@@ -218,6 +222,7 @@ function TripRow({
               style={[styles.actionBtn, { backgroundColor: colors.accent, borderRadius: 8 }]}
               accessibilityRole="button"
               accessibilityLabel={t("share")}
+              testID={`archive-share-${trip.id}`}
             >
               <Ionicons name="share-social-outline" size={16} color={colors.primary} />
               <Text style={[styles.actionBtnText, { color: colors.primary, fontFamily: "Inter_500Medium" }]}>
@@ -230,6 +235,7 @@ function TripRow({
                 style={[styles.actionBtn, { backgroundColor: colors.accent, borderRadius: 8 }]}
                 accessibilityRole="button"
                 accessibilityLabel={t("exportPDF")}
+                testID={`archive-pdf-${trip.id}`}
               >
                 <Ionicons name="document-text-outline" size={16} color={colors.primary} />
                 <Text style={[styles.actionBtnText, { color: colors.primary, fontFamily: "Inter_500Medium" }]}>
@@ -242,6 +248,7 @@ function TripRow({
               style={[styles.actionBtn, { backgroundColor: "rgba(255,59,48,0.08)", borderRadius: 8 }]}
               accessibilityRole="button"
               accessibilityLabel={t("delete")}
+              testID={`archive-delete-${trip.id}`}
             >
               <Ionicons name="trash-outline" size={16} color={colors.destructive} />
               <Text style={[styles.actionBtnText, { color: colors.destructive, fontFamily: "Inter_500Medium" }]}>
@@ -258,7 +265,7 @@ function TripRow({
 function StatChip({ label, value, colors }: { label: string; value: string; colors: ReturnType<typeof useColors> }) {
   return (
     <View style={[statStyles.chip, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 10 }]}>
-      <Text style={[statStyles.val, { color: colors.primary, fontFamily: "Inter_700Bold" }]} numberOfLines={1}>
+      <Text style={[statStyles.val, { color: colors.primary, fontFamily: "Inter_700Bold" }]} numberOfLines={2}>
         {value}
       </Text>
       <Text style={[statStyles.lbl, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]} numberOfLines={1}>
@@ -296,8 +303,7 @@ export default function ArchiveScreen() {
 
   const stats = useMemo(() => {
     if (trips.length === 0) return null;
-    const totalSpent = trips.reduce((sum, tr) => sum + tr.total, 0);
-    const avgPerTrip = totalSpent / trips.length;
+    const currencySummaries = summarizeTripsByCurrency(trips);
     const storeCounts = trips.reduce<Record<string, number>>((acc, tr) => {
       acc[tr.store] = (acc[tr.store] ?? 0) + 1;
       return acc;
@@ -305,7 +311,11 @@ export default function ArchiveScreen() {
     const topStore =
       Object.entries(storeCounts).sort(([, a], [, b]) => b - a)[0]?.[0] ??
       t("noTopStore");
-    return { totalSpent, avgPerTrip, topStore };
+    return {
+      totalSpent: currencySummaries.map((summary) => `${summary.total.toFixed(0)} ${summary.currency}`).join(" · "),
+      avgPerTrip: currencySummaries.map((summary) => `${summary.average.toFixed(0)} ${summary.currency}`).join(" · "),
+      topStore,
+    };
   }, [trips, t]);
 
   const handleDelete = (trip: Trip) => {
@@ -315,8 +325,12 @@ export default function ArchiveScreen() {
         text: t("confirm"),
         style: "destructive",
         onPress: async () => {
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          deleteTrip(trip.id);
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+          try {
+            await deleteTrip(trip.id);
+          } catch {
+            Alert.alert(t("errorTitle"));
+          }
         },
       },
     ]);
@@ -338,9 +352,9 @@ export default function ArchiveScreen() {
     }
   };
 
-  const handleItemTap = async (item: TripItem) => {
+  const handleItemTap = async (item: TripItem, currency: string) => {
     await Haptics.selectionAsync();
-    setSelectedProduct({ name: item.name, barcode: item.barcode });
+    setSelectedProduct({ name: item.name, barcode: item.barcode, currency: currency || currencySymbol });
   };
 
   return (
@@ -367,6 +381,7 @@ export default function ArchiveScreen() {
             style={[styles.compareBtn, { backgroundColor: colors.accent, borderRadius: 10 }]}
             accessibilityRole="button"
             accessibilityLabel={t("comparePricesAction")}
+            testID="archive-price-compare"
           >
             <Ionicons name="git-compare-outline" size={20} color={colors.primary} />
           </TouchableOpacity>
@@ -382,14 +397,14 @@ export default function ArchiveScreen() {
             onDelete={() => handleDelete(item)}
             onExportPDF={() => handleExportPDF(item)}
             onShare={() => handleShare(item)}
-            onItemTap={handleItemTap}
+            onItemTap={(tripItem) => handleItemTap(tripItem, item.currency)}
           />
         )}
         ListHeaderComponent={
           stats ? (
             <View style={[styles.statsCard, { flexDirection: isRTL ? "row-reverse" : "row" }]}>
-              <StatChip label={t("totalSpent")} value={`${stats.totalSpent.toFixed(0)} ${currencySymbol}`} colors={colors} />
-              <StatChip label={t("avgPerTrip")} value={`${stats.avgPerTrip.toFixed(0)} ${currencySymbol}`} colors={colors} />
+              <StatChip label={t("totalSpent")} value={stats.totalSpent} colors={colors} />
+              <StatChip label={t("avgPerTrip")} value={stats.avgPerTrip} colors={colors} />
               <StatChip label={t("topStore")} value={stats.topStore} colors={colors} />
             </View>
           ) : null
@@ -420,6 +435,7 @@ export default function ArchiveScreen() {
           onClose={() => setSelectedProduct(null)}
           productName={selectedProduct.name}
           barcode={selectedProduct.barcode}
+          currency={selectedProduct.currency}
         />
       )}
     </View>
@@ -447,7 +463,7 @@ const styles = StyleSheet.create({
   itemDetailSubtotal: { fontSize: 12, marginTop: 2 },
   chartHint: { width: 28, height: 28, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   tripActions: { padding: 12, gap: 8, flexWrap: "wrap" },
-  actionBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8 },
+  actionBtn: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8 },
   actionBtnText: { fontSize: 13 },
   emptyContainer: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, paddingTop: 80 },
   emptyTitle: { fontSize: 20 },

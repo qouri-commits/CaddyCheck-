@@ -11,16 +11,27 @@ export default function Index() {
 
   useEffect(() => {
     let active = true;
+    let resolved = false;
     const fallbackTimer = setTimeout(() => {
-      if (active) setOnboarded(false);
+      if (active && !resolved) {
+        resolved = true;
+        setOnboarded(false);
+      }
     }, 2000);
 
     AsyncStorage.getItem("onboarded")
       .then((val) => {
-        if (active) setOnboarded(!!val);
+        if (active && !resolved) {
+          resolved = true;
+          setOnboarded(val === "true");
+        }
       })
-      .catch(() => {
-        if (active) setOnboarded(false);
+      .catch((error) => {
+        console.error("Failed to read onboarding status:", error);
+        if (active && !resolved) {
+          resolved = true;
+          setOnboarded(false);
+        }
       })
       .finally(() => clearTimeout(fallbackTimer));
 

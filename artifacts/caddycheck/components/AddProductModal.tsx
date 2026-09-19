@@ -4,7 +4,6 @@ import {
   Image,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -19,6 +18,8 @@ import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import { useBasket } from "@/context/BasketContext";
 import { BasketItem } from "@/types";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
+import { parseLocalizedDecimal, parsePositivePrice, parsePositiveQuantity } from "@/utils/shoppingReceipt";
 
 interface ScannedProduct {
   barcode?: string;
@@ -41,7 +42,7 @@ function generateId() {
 export function AddProductModal({ visible, onClose, product, isLoading }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { t, isRTL, currencySymbol } = useLanguage();
+  const { t, isRTL, currencySymbol, language } = useLanguage();
   const { addItem, priceHistory, updatePriceHistory } = useBasket();
 
   const [name, setName] = useState("");
@@ -53,10 +54,13 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
   const historyEntry = product?.barcode
     ? priceHistory[product.barcode]
     : null;
+  const historyCurrency = (historyEntry as (typeof historyEntry & { currency?: string }) | null)?.currency;
+  const comparableHistory = historyCurrency === currencySymbol ? historyEntry : null;
+  const parsedPrice = parseLocalizedDecimal(price);
 
   const priceDiff =
-    historyEntry && price && parseFloat(price) !== historyEntry.lastPrice
-      ? parseFloat(price) - historyEntry.lastPrice
+    comparableHistory && parsedPrice !== null && parsedPrice !== comparableHistory.lastPrice
+      ? parsedPrice - comparableHistory.lastPrice
       : null;
 
   useEffect(() => {
@@ -73,10 +77,18 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
       setValidationError(t("productNameRequired"));
       return;
     }
-    const numPrice = parseFloat(price.replace(",", "."));
-    const numQty = Math.max(1, parseInt(quantity, 10) || 1);
-    if (!price.trim() || !Number.isFinite(numPrice) || numPrice <= 0) {
+    const numPrice = parsePositivePrice(price);
+    const numQty = parsePositiveQuantity(quantity);
+    if (numPrice === null) {
       setValidationError(t("validPriceRequired"));
+      return;
+    }
+    if (numQty === null) {
+      setValidationError({
+        en: "Enter a whole quantity from 1 to 9,999.",
+        fr: "Saisissez une quantité entière de 1 à 9 999.",
+        ar: "أدخل كمية صحيحة من 1 إلى 9999.",
+      }[language]);
       return;
     }
     setValidationError("");
@@ -84,11 +96,13 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     if (product?.barcode) {
-      updatePriceHistory(product.barcode, {
+      const nextHistory = {
         lastPrice: numPrice,
         lastStore: "",
         lastDate: new Date().toISOString(),
-      });
+        currency: currencySymbol,
+      };
+      updatePriceHistory(product.barcode, nextHistory);
     }
 
     const item: BasketItem = {
@@ -118,6 +132,7 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
         onPress={onClose}
         accessibilityRole="button"
         accessibilityLabel={t("close")}
+        testID="add-product-dismiss"
       />
       <View
         style={[
@@ -147,9 +162,10 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
             </Text>
           </View>
         ) : (
-          <ScrollView
+          <KeyboardAwareScrollViewCompat
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            bottomOffset={24}
           >
             {product?.imageUrl && (
               <View style={styles.imageContainer}>
@@ -207,6 +223,8 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
                 placeholderTextColor={colors.mutedForeground}
                 returnKeyType="next"
                 onSubmitEditing={() => priceInputRef.current?.focus()}
+                accessibilityLabel={t("productName")}
+                testID="add-product-name"
               />
             </View>
 
@@ -243,6 +261,8 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
                   keyboardType="decimal-pad"
                   onSubmitEditing={handleAdd}
                   returnKeyType="done"
+                   accessibilityLabel={t("shelfPrice")}
+                   testID="add-product-price"
                 />
               </View>
               <View style={[styles.inputGroup, { flex: 1, marginLeft: 10 }]}>
@@ -267,13 +287,12 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
                 >
                   <TouchableOpacity
                     onPress={() =>
-                      setQuantity((q) =>
-                        String(Math.max(1, parseInt(q, 10) - 1))
-                      )
+                      setQuantity((q) => String(Math.max(1, (parsePositiveQuantity(q) ?? 1) - 1)))
                     }
                     style={styles.qtyBtn}
                     accessibilityRole="button"
                     accessibilityLabel={t("decreaseQuantity")}
+                    testID="add-product-quantity-decrease"
                   >
                     <Ionicons name="remove" size={18} color={colors.foreground} />
                   </TouchableOpacity>
@@ -283,18 +302,24 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
                       { color: colors.foreground, fontFamily: "Inter_600SemiBold" },
                     ]}
                     value={quantity}
-                    onChangeText={(v) => setQuantity(v.replace(/[^0-9]/g, ""))}
+                    onChangeText={(v) => {
+                      setQuantity(v);
+                      if (validationError) setValidationError("");
+                    }}
                     keyboardType="number-pad"
                     textAlign="center"
                     selectTextOnFocus
+                    accessibilityLabel={t("quantity")}
+                    testID="add-product-quantity"
                   />
                   <TouchableOpacity
                     onPress={() =>
-                      setQuantity((q) => String(parseInt(q, 10) + 1))
+                      setQuantity((q) => String(Math.min(9999, (parsePositiveQuantity(q) ?? 0) + 1)))
                     }
                     style={styles.qtyBtn}
                     accessibilityRole="button"
                     accessibilityLabel={t("increaseQuantity")}
+                    testID="add-product-quantity-increase"
                   >
                     <Ionicons name="add" size={18} color={colors.foreground} />
                   </TouchableOpacity>
@@ -340,9 +365,9 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
               </View>
             )}
 
-            {historyEntry && (
+            {comparableHistory && (
               <TouchableOpacity
-                onPress={() => setPrice(String(historyEntry.lastPrice))}
+                onPress={() => setPrice(String(comparableHistory.lastPrice))}
                 style={[
                   styles.suggestionChip,
                   {
@@ -355,7 +380,8 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
                   },
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel={`${t("lastPaid")}: ${historyEntry.lastPrice.toFixed(2)} ${currencySymbol}`}
+                accessibilityLabel={`${t("lastPaid")}: ${comparableHistory.lastPrice.toFixed(2)} ${currencySymbol}`}
+                testID="add-product-last-price"
               >
                 <Ionicons
                   name="time-outline"
@@ -368,7 +394,7 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
                     { color: colors.accentForeground, fontFamily: "Inter_500Medium" },
                   ]}
                 >
-                  {t("lastPaid")}: {historyEntry.lastPrice.toFixed(2)}{" "}
+                  {t("lastPaid")}: {comparableHistory.lastPrice.toFixed(2)}{" "}
                   {currencySymbol}
                 </Text>
               </TouchableOpacity>
@@ -402,6 +428,7 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
               ]}
               accessibilityRole="button"
               accessibilityLabel={t("addToBasket")}
+              testID="add-product-submit"
             >
               <Ionicons
                 name="add-circle-outline"
@@ -427,7 +454,7 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
                 {t("addToBasket")}
               </Text>
             </TouchableOpacity>
-          </ScrollView>
+          </KeyboardAwareScrollViewCompat>
         )}
       </View>
     </Modal>
@@ -497,7 +524,8 @@ const styles = StyleSheet.create({
     height: 48,
   },
   qtyBtn: {
-    width: 40,
+    width: 44,
+    height: 48,
     alignItems: "center",
     justifyContent: "center",
   },

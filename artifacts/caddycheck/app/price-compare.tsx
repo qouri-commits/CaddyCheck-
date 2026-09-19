@@ -29,6 +29,7 @@ interface ComparableProduct {
   minPrice: number;
   maxPrice: number;
   savings: number;
+  currency: string;
 }
 
 function StoreRow({
@@ -105,7 +106,7 @@ function StoreRow({
 
 function ProductCard({ product }: { product: ComparableProduct }) {
   const colors = useColors();
-  const { t, flexDirection, textAlign, currencySymbol } = useLanguage();
+  const { t, flexDirection, textAlign } = useLanguage();
   const sorted = [...product.stores].sort((a, b) => a.price - b.price);
 
   return (
@@ -132,7 +133,7 @@ function ProductCard({ product }: { product: ComparableProduct }) {
           </Text>
           {product.savings > 0 && (
             <Text style={[styles.savingsText, { color: colors.primary, fontFamily: "Inter_500Medium", textAlign }]}>
-              {t("potentialSavings")} {product.savings.toFixed(2)} {currencySymbol}
+              {t("potentialSavings")} {product.savings.toFixed(2)} {product.currency}
             </Text>
           )}
         </View>
@@ -144,7 +145,7 @@ function ProductCard({ product }: { product: ComparableProduct }) {
             key={`${sp.store}-${i}`}
             storePrice={sp}
             isCheapest={i === 0}
-            currencySymbol={currencySymbol}
+            currencySymbol={product.currency}
             colors={colors}
             flexDirection={flexDirection}
             textAlign={textAlign}
@@ -167,16 +168,20 @@ export default function PriceCompareScreen() {
       key: string;
       name: string;
       imageUrl?: string;
+      currency: string;
       byStore: Map<string, StorePrice>;
     }
     const map = new Map<string, Entry>();
 
     for (const trip of trips) {
       for (const item of trip.items) {
-        const key = item.barcode ? `bc:${item.barcode}` : `nm:${item.name.trim().toLowerCase()}`;
+        if (!Number.isFinite(item.price) || item.price <= 0) continue;
+        const currency = trip.currency.trim() || "—";
+        const productKey = item.barcode ? `bc:${item.barcode}` : `nm:${item.name.trim().toLowerCase()}`;
+        const key = `${productKey}|currency:${currency}`;
         let entry = map.get(key);
         if (!entry) {
-          entry = { key, name: item.name, imageUrl: item.imageUrl, byStore: new Map() };
+          entry = { key, name: item.name, imageUrl: item.imageUrl, currency, byStore: new Map() };
           map.set(key, entry);
         }
         const existing = entry.byStore.get(trip.store);
@@ -202,6 +207,7 @@ export default function PriceCompareScreen() {
         minPrice,
         maxPrice,
         savings: maxPrice - minPrice,
+        currency: entry.currency,
       });
     }
 
@@ -217,6 +223,7 @@ export default function PriceCompareScreen() {
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityRole="button"
           accessibilityLabel={t("close")}
+          testID="price-compare-back"
         >
           <Ionicons name={flexDirection === "row-reverse" ? "arrow-forward" : "arrow-back"} size={24} color={colors.foreground} />
         </TouchableOpacity>

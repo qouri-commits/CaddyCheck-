@@ -16,6 +16,18 @@ import { getRegionById, getRegionLabel } from "@/constants/regions";
 type Strings = typeof arStrings;
 export type Theme = "system" | "light" | "dark";
 
+const LANGUAGES: readonly Language[] = ["ar", "fr", "en"];
+const THEMES: readonly Theme[] = ["system", "light", "dark"];
+const HYDRATION_TIMEOUT_MS = 2000;
+
+function isLanguage(value: string | null): value is Language {
+  return value !== null && LANGUAGES.includes(value as Language);
+}
+
+function isTheme(value: string | null): value is Theme {
+  return value !== null && THEMES.includes(value as Theme);
+}
+
 const STRINGS: Record<Language, Strings> = {
   ar: arStrings,
   fr: frStrings as unknown as Strings,
@@ -33,6 +45,17 @@ export const CURRENCY_SYMBOLS: Record<string, string> = {
   AED: "د.إ",
   EGP: "ج.م",
 };
+
+async function persist(
+  operation: () => Promise<unknown>,
+  setting: string
+): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    console.error(`Failed to persist ${setting}:`, error);
+  }
+}
 
 interface LanguageContextType {
   language: Language;
@@ -80,45 +103,108 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [isLoaded,      setIsLoaded]       = useState(false);
 
   useEffect(() => {
-    AsyncStorage.multiGet([
-      "app_language",
-      "user_language",
-      "app_currency",
-      "caddycheck_currency",
-      "caddycheck_theme",
-      "caddycheck_home_region",
-    ]).then((pairs) => {
-      const langVal     = (pairs[0][1] as Language | null) ?? (pairs[1][1] as Language | null) ?? "ar";
-      const currVal     = pairs[2][1] ?? pairs[3][1] ?? "MAD";
-      const themeVal    = (pairs[4][1] as Theme | null) ?? "system";
-      const regionVal   = pairs[5][1] ?? null;
-      setLanguageState(langVal);
-      setCurrencyState(currVal);
-      setThemeState(themeVal);
-      setHomeRegionId(regionVal);
-      setIsLoaded(true);
-    });
+    let active = true;
+    const timeout = setTimeout(() => {
+      if (active) setIsLoaded(true);
+    }, HYDRATION_TIMEOUT_MS);
+
+    const hydrate = async () => {
+      try {
+        const pairs = await AsyncStorage.multiGet([
+          "app_language",
+          "user_language",
+          "app_currency",
+          "caddycheck_currency",
+          "caddycheck_theme",
+          "caddycheck_home_region",
+        ]);
+        if (!active) return;
+
+        const primaryLanguage = pairs[0][1];
+        const legacyLanguage = pairs[1][1];
+        const primaryCurrency = pairs[2][1];
+        const legacyCurrency = pairs[3][1];
+        const storedTheme = pairs[4][1];
+        const storedRegion = pairs[5][1];
+
+        setLanguageState(
+          isLanguage(primaryLanguage)
+            ? primaryLanguage
+            : isLanguage(legacyLanguage)
+              ? legacyLanguage
+              : "ar"
+        );
+        setCurrencyState(
+          primaryCurrency && primaryCurrency in CURRENCY_SYMBOLS
+            ? primaryCurrency
+            : legacyCurrency && legacyCurrency in CURRENCY_SYMBOLS
+              ? legacyCurrency
+              : "MAD"
+        );
+        setThemeState(isTheme(storedTheme) ? storedTheme : "system");
+        setHomeRegionId(
+          storedRegion && getRegionById(storedRegion) ? storedRegion : null
+        );
+      } catch (error) {
+        console.error("Failed to hydrate app preferences:", error);
+      } finally {
+        if (active) {
+          clearTimeout(timeout);
+          setIsLoaded(true);
+        }
+      }
+    };
+
+    void hydrate();
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
   }, []);
 
   const changeLanguage = useCallback(async (lang: Language) => {
+    if (!isLanguage(lang)) {
+      console.error("Ignoring unsupported language:", lang);
+      return;
+    }
     setLanguageState(lang);
-    await AsyncStorage.multiSet([
-      ["app_language", lang],
-      ["user_language", lang],
-    ]);
+    await persist(
+      () =>
+        AsyncStorage.multiSet([
+          ["app_language", lang],
+          ["user_language", lang],
+        ]),
+      "language"
+    );
   }, []);
 
   const changeCurrency = useCallback(async (code: string) => {
+    if (!(code in CURRENCY_SYMBOLS)) {
+      console.error("Ignoring unsupported currency:", code);
+      return;
+    }
     setCurrencyState(code);
-    await AsyncStorage.multiSet([
-      ["app_currency", code],
-      ["caddycheck_currency", code],
-    ]);
+    await persist(
+      () =>
+        AsyncStorage.multiSet([
+          ["app_currency", code],
+          ["caddycheck_currency", code],
+        ]),
+      "currency"
+    );
   }, []);
 
   const changeTheme = useCallback(async (t: Theme) => {
+    if (!isTheme(t)) {
+      console.error("Ignoring unsupported theme:", t);
+      return;
+    }
     setThemeState(t);
-    await AsyncStorage.setItem("caddycheck_theme", t);
+    await persist(
+      () => AsyncStorage.setItem("caddycheck_theme", t),
+      "theme"
+    );
   }, []);
 
   const changeRegion = useCallback(async (regionId: string) => {
@@ -127,11 +213,15 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     setHomeRegionId(regionId);
     // Auto-set the matching currency
     setCurrencyState(region.currency);
-    await AsyncStorage.multiSet([
-      ["caddycheck_home_region", regionId],
-      ["app_currency",           region.currency],
-      ["caddycheck_currency",    region.currency],
-    ]);
+    await persist(
+      () =>
+        AsyncStorage.multiSet([
+          ["caddycheck_home_region", regionId],
+          ["app_currency",           region.currency],
+          ["caddycheck_currency",    region.currency],
+        ]),
+      "home region"
+    );
   }, []);
 
   const t = useCallback(

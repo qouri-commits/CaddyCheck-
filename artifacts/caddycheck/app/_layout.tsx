@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -17,7 +18,11 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LanguageProvider } from "@/context/LanguageContext";
 import { BasketProvider } from "@/context/BasketContext";
 
-SplashScreen.preventAutoHideAsync();
+if (Platform.OS !== "web") {
+  void SplashScreen.preventAutoHideAsync().catch((error) => {
+    console.warn("Unable to keep the splash screen visible:", error);
+  });
+}
 
 const queryClient = new QueryClient();
 
@@ -31,13 +36,19 @@ export default function RootLayout() {
   const [fontLoadTimedOut, setFontLoadTimedOut] = useState(false);
 
   useEffect(() => {
+    if (Platform.OS === "web" || fontsLoaded || fontError) return;
     const timeout = setTimeout(() => setFontLoadTimedOut(true), 3500);
     return () => clearTimeout(timeout);
-  }, []);
+  }, [fontsLoaded, fontError]);
 
   useEffect(() => {
-    if (fontsLoaded || fontError || fontLoadTimedOut) {
-      SplashScreen.hideAsync();
+    if (
+      Platform.OS !== "web" &&
+      (fontsLoaded || fontError || fontLoadTimedOut)
+    ) {
+      void SplashScreen.hideAsync().catch((error) => {
+        console.warn("Unable to hide the splash screen:", error);
+      });
     }
   }, [fontsLoaded, fontError, fontLoadTimedOut]);
 

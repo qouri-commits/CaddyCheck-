@@ -21,6 +21,7 @@ interface Props {
   onClose: () => void;
   productName: string;
   barcode?: string;
+  currency?: string;
 }
 
 interface ChartPoint {
@@ -60,20 +61,36 @@ function shortDate(dateStr: string): string {
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CHART_WIDTH = SCREEN_WIDTH - 48;
 
-export function PriceTrendModal({ visible, onClose, productName, barcode }: Props) {
+export function PriceTrendModal({ visible, onClose, productName, barcode, currency }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { t, flexDirection, textAlign, currencySymbol } = useLanguage();
+  const { t, flexDirection, textAlign, currencySymbol, language } = useLanguage();
   const { trips } = useBasket();
+  const selectedCurrency = currency || currencySymbol;
+  const emptyText = {
+    en: {
+      none: "No price history yet",
+      more: "At least 2 purchases are needed to show a trend",
+    },
+    fr: {
+      none: "Aucun historique de prix",
+      more: "Au moins 2 achats sont nécessaires pour afficher une tendance",
+    },
+    ar: {
+      none: "لا يوجد سجل أسعار بعد",
+      more: "يلزم وجود عمليتي شراء على الأقل لعرض الاتجاه",
+    },
+  }[language];
 
   const chartPoints = useMemo<ChartPoint[]>(() => {
     const points: ChartPoint[] = [];
     for (const trip of trips) {
+      if ((trip.currency || currencySymbol) !== selectedCurrency) continue;
       for (const item of trip.items) {
         const matches = barcode
           ? item.barcode === barcode
           : item.name.trim().toLowerCase() === productName.trim().toLowerCase();
-        if (matches) {
+        if (matches && Number.isFinite(item.price) && item.price > 0) {
           points.push({ dateISO: trip.date, label: shortDate(trip.date), price: item.price, store: trip.store });
           break;
         }
@@ -81,7 +98,7 @@ export function PriceTrendModal({ visible, onClose, productName, barcode }: Prop
     }
     points.sort((a, b) => a.dateISO.localeCompare(b.dateISO));
     return points.slice(-10);
-  }, [trips, productName, barcode]);
+  }, [trips, productName, barcode, currencySymbol, selectedCurrency]);
 
   const storesInData = useMemo(() => {
     const seen = new Set<string>();
@@ -112,6 +129,7 @@ export function PriceTrendModal({ visible, onClose, productName, barcode }: Prop
         onPress={onClose}
         accessibilityRole="button"
         accessibilityLabel={t("close")}
+        testID="price-trend-dismiss"
       />
       <View
         style={[
@@ -163,7 +181,7 @@ export function PriceTrendModal({ visible, onClose, productName, barcode }: Prop
                   },
                 ]}
               >
-                {priceTrend > 0 ? "+" : ""}{priceTrend.toFixed(2)} {currencySymbol}
+                {priceTrend > 0 ? "+" : ""}{priceTrend.toFixed(2)} {selectedCurrency}
               </Text>
             </View>
           )}
@@ -174,7 +192,7 @@ export function PriceTrendModal({ visible, onClose, productName, barcode }: Prop
             <View style={styles.emptyChart}>
               <Ionicons name="stats-chart-outline" size={48} color={colors.border} />
               <Text style={[styles.emptyText, { color: colors.mutedForeground, fontFamily: "Inter_500Medium" }]}>
-                {chartPoints.length === 0 ? "No price history yet" : "Need at least 2 purchases to show a trend"}
+                {chartPoints.length === 0 ? emptyText.none : emptyText.more}
               </Text>
               {chartPoints.length === 1 && (
                 <View
@@ -184,7 +202,7 @@ export function PriceTrendModal({ visible, onClose, productName, barcode }: Prop
                   ]}
                 >
                   <Text style={[styles.singlePointPrice, { color: colors.primary, fontFamily: "Inter_700Bold" }]}>
-                    {chartPoints[0].price.toFixed(2)} {currencySymbol}
+                    {chartPoints[0].price.toFixed(2)} {selectedCurrency}
                   </Text>
                   <Text style={[styles.singlePointMeta, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
                     {chartPoints[0].label} · {chartPoints[0].store}
@@ -238,7 +256,7 @@ export function PriceTrendModal({ visible, onClose, productName, barcode }: Prop
               />
               {priceRange > 0 && (
                 <Text style={[styles.rangeLabel, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
-                  {currencySymbol} {minPrice.toFixed(2)} — {maxPrice.toFixed(2)}
+                  {selectedCurrency} {minPrice.toFixed(2)} — {maxPrice.toFixed(2)}
                 </Text>
               )}
             </View>
@@ -281,7 +299,7 @@ export function PriceTrendModal({ visible, onClose, productName, barcode }: Prop
                     </Text>
                   </View>
                   <Text style={[styles.purchasePrice, { color: colors.primary, fontFamily: "Inter_700Bold" }]}>
-                    {point.price.toFixed(2)} {currencySymbol}
+                    {point.price.toFixed(2)} {selectedCurrency}
                   </Text>
                 </View>
               ))}

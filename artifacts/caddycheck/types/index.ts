@@ -11,6 +11,7 @@ export interface PriceHistoryEntry {
   lastPrice: number;
   lastStore: string;
   lastDate: string;
+  currency?: string;
 }
 
 export interface TripItem {

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Linking,
@@ -19,6 +19,7 @@ import { useColors } from "@/hooks/useColors";
 import { useLanguage } from "@/context/LanguageContext";
 import { useBasket } from "@/context/BasketContext";
 import { AddProductModal } from "@/components/AddProductModal";
+import { isValidGtin, normalizeBarcode } from "@/utils/shoppingReceipt";
 
 interface ScannedProduct {
   barcode?: string;
@@ -40,16 +41,24 @@ function pickProductName(p: Record<string, string | undefined>, lang: string): s
 
 async function fetchProductFromOpenFoodFacts(
   barcode: string,
-  lang: string
-): Promise<{ product: ScannedProduct; networkError: boolean }> {
+  lang: string,
+  externalSignal?: AbortSignal
+): Promise<{ product: ScannedProduct; error: "network" | "timeout" | "cancelled" | null }> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10_000);
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  externalSignal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 10_000);
   try {
     const url = `https://world.openfoodfacts.org/api/v2/product/${barcode}.json`;
     const response = await fetch(url, {
       headers: { "User-Agent": "CaddyCheck/1.0" },
       signal: controller.signal,
     });
+    if (!response.ok) throw new Error(`OpenFoodFacts request failed: ${response.status}`);
     const data = await response.json();
     if (data.status === 1 && data.product) {
       const p = data.product as Record<string, string | undefined>;
@@ -60,18 +69,42 @@ async function fetchProductFromOpenFoodFacts(
           imageUrl: p.image_front_url ?? p.image_url,
           brand: p.brands,
         },
-        networkError: false,
+        error: null,
       };
     }
-    return { product: { barcode }, networkError: false };
+    return { product: { barcode }, error: null };
   } catch {
-    // Network unreachable — let the caller know so it can inform the user,
-    // while still allowing manual entry for the scanned barcode.
-    return { product: { barcode }, networkError: true };
+    const error = timedOut ? "timeout" : externalSignal?.aborted ? "cancelled" : "network";
+    return { product: { barcode }, error };
   } finally {
     clearTimeout(timeoutId);
+    externalSignal?.removeEventListener("abort", abortFromCaller);
   }
 }
+
+const scanMessages = {
+  en: {
+    invalidBarcode: "Enter a valid EAN/UPC barcode (8, 12, 13, or 14 digits).",
+    timeout: "The lookup timed out. You can still enter the product details manually.",
+    manualHint: "Enter a barcode to look it up, or add a product without one.",
+    search: "Look up barcode",
+    settingsError: "Could not open Settings. Open your device settings and allow camera access for CaddyCheck.",
+  },
+  fr: {
+    invalidBarcode: "Saisissez un code EAN/UPC valide (8, 12, 13 ou 14 chiffres).",
+    timeout: "La recherche a expiré. Vous pouvez saisir le produit manuellement.",
+    manualHint: "Saisissez un code-barres ou ajoutez un produit sans code.",
+    search: "Rechercher le code-barres",
+    settingsError: "Impossible d’ouvrir les réglages. Autorisez l’appareil photo pour CaddyCheck dans les réglages de l’appareil.",
+  },
+  ar: {
+    invalidBarcode: "أدخل رمز EAN/UPC صالحًا من 8 أو 12 أو 13 أو 14 رقمًا.",
+    timeout: "انتهت مهلة البحث. يمكنك إدخال تفاصيل المنتج يدويًا.",
+    manualHint: "أدخل رمزًا للبحث، أو أضف منتجًا بدونه.",
+    search: "البحث عن الرمز",
+    settingsError: "تعذر فتح الإعدادات. افتح إعدادات الجهاز واسمح لـ CaddyCheck باستخدام الكاميرا.",
+  },
+} as const;
 
 export default function ScanScreen() {
   const colors = useColors();
@@ -85,34 +118,50 @@ export default function ScanScreen() {
   const [product, setProduct] = useState<ScannedProduct | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [manualBarcode, setManualBarcode] = useState("");
+  const lookupControllerRef = useRef<AbortController | null>(null);
+  const messages = scanMessages[language];
+
+  useEffect(() => () => lookupControllerRef.current?.abort(), []);
 
   const handleBarcode = useCallback(
     async (barcode: string) => {
       if (scanned) return;
+      const normalized = normalizeBarcode(barcode);
+      if (!isValidGtin(normalized)) {
+        Alert.alert(t("errorTitle"), messages.invalidBarcode);
+        return;
+      }
       setScanned(true);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      const cached = getProductCache(barcode);
+      const cached = getProductCache(normalized);
       if (cached) {
-        setProduct(cached as unknown as ScannedProduct);
+        setIsLoading(false);
+        setProduct({ ...(cached as unknown as ScannedProduct), barcode: normalized });
         setModalVisible(true);
         return;
       }
 
+      lookupControllerRef.current?.abort();
+      const controller = new AbortController();
+      lookupControllerRef.current = controller;
       setIsLoading(true);
       setModalVisible(true);
+      setProduct({ barcode: normalized });
 
-      const { product: result, networkError } = await fetchProductFromOpenFoodFacts(barcode, language);
-      if (!networkError) {
-        saveProductCache(barcode, result as unknown as Record<string, unknown>);
+      const { product: result, error } = await fetchProductFromOpenFoodFacts(normalized, language, controller.signal);
+      if (controller.signal.aborted || lookupControllerRef.current !== controller) return;
+      lookupControllerRef.current = null;
+      if (!error) {
+        saveProductCache(normalized, result as unknown as Record<string, unknown>);
       }
       setProduct(result);
       setIsLoading(false);
-      if (networkError) {
-        Alert.alert(t("errorTitle"), t("networkErrorLookup"));
+      if (error) {
+        Alert.alert(t("errorTitle"), error === "timeout" ? messages.timeout : t("networkErrorLookup"));
       }
     },
-    [scanned, getProductCache, saveProductCache, t, language]
+    [scanned, getProductCache, saveProductCache, t, language, messages]
   );
 
   const handleCloseModal = () => {
@@ -121,6 +170,8 @@ export default function ScanScreen() {
     setProduct(null);
     setIsLoading(false);
     setManualBarcode("");
+    lookupControllerRef.current?.abort();
+    lookupControllerRef.current = null;
   };
 
   const handleManualSearch = async () => {
@@ -129,7 +180,7 @@ export default function ScanScreen() {
       setModalVisible(true);
       return;
     }
-    await handleBarcode(manualBarcode.trim());
+    await handleBarcode(manualBarcode);
   };
 
   // Close button position respects RTL
@@ -141,6 +192,9 @@ export default function ScanScreen() {
         <TouchableOpacity
           onPress={() => router.back()}
           style={[styles.closeBtn, { top: insets.top + 67, ...closeBtnSide }]}
+          accessibilityRole="button"
+          accessibilityLabel={t("close")}
+          testID="scan-close"
         >
           <Ionicons name="close" size={28} color="#fff" />
         </TouchableOpacity>
@@ -168,10 +222,16 @@ export default function ScanScreen() {
               placeholderTextColor="rgba(255,255,255,0.4)"
               value={manualBarcode}
               onChangeText={setManualBarcode}
+              keyboardType="number-pad"
+              accessibilityLabel={t("enterBarcode")}
+              testID="scan-manual-barcode"
             />
             <TouchableOpacity
               onPress={handleManualSearch}
               style={[styles.manualBtn, { backgroundColor: colors.primary, borderRadius: 10 }]}
+              accessibilityRole="button"
+              accessibilityLabel={messages.search}
+              testID="scan-manual-search"
             >
               <Ionicons name="add" size={24} color="#fff" />
             </TouchableOpacity>
@@ -189,7 +249,13 @@ export default function ScanScreen() {
   if (!permission.granted) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
-        <TouchableOpacity style={[styles.closeBtnLight, { borderColor: colors.border }]} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={[styles.closeBtnLight, { borderColor: colors.border }]}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel={t("close")}
+          testID="scan-close"
+        >
           <Ionicons name="close" size={24} color={colors.foreground} />
         </TouchableOpacity>
         <View style={styles.permissionContent}>
@@ -197,25 +263,66 @@ export default function ScanScreen() {
           <Text style={[styles.permissionTitle, { color: colors.foreground, fontFamily: "Inter_600SemiBold", textAlign: "center" }]}>
             {t("cameraPermission")}
           </Text>
-          <TouchableOpacity
-            onPress={requestPermission}
-            style={[styles.permissionBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
-          >
-            <Text style={[styles.permissionBtnText, { fontFamily: "Inter_600SemiBold" }]}>{t("requestPermission")}</Text>
-          </TouchableOpacity>
+          {permission.canAskAgain && (
+            <TouchableOpacity
+              onPress={requestPermission}
+              style={[styles.permissionBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+              accessibilityRole="button"
+              accessibilityLabel={t("requestPermission")}
+              testID="scan-request-camera"
+            >
+              <Text style={[styles.permissionBtnText, { fontFamily: "Inter_600SemiBold" }]}>{t("requestPermission")}</Text>
+            </TouchableOpacity>
+          )}
           {!permission.canAskAgain && (
             <TouchableOpacity
-              onPress={() => Linking.openSettings()}
+              onPress={async () => {
+                try {
+                  await Linking.openSettings();
+                } catch {
+                  Alert.alert(t("errorTitle"), messages.settingsError);
+                }
+              }}
               style={[styles.settingsBtn, { borderColor: colors.border, borderRadius: colors.radius }]}
+              accessibilityRole="button"
+              accessibilityLabel={t("openSettings")}
+              testID="scan-open-settings"
             >
               <Text style={[styles.settingsBtnText, { color: colors.foreground, fontFamily: "Inter_500Medium" }]}>
                 {t("openSettings")}
               </Text>
             </TouchableOpacity>
           )}
+          <Text style={[styles.manualHint, { color: colors.mutedForeground, fontFamily: "Inter_400Regular" }]}>
+            {messages.manualHint}
+          </Text>
+          <View style={[styles.deniedManualRow, { flexDirection }]}>
+            <TextInput
+              style={[styles.deniedManualInput, { color: colors.foreground, backgroundColor: colors.input, borderColor: colors.border, textAlign }]}
+              value={manualBarcode}
+              onChangeText={setManualBarcode}
+              placeholder={t("enterBarcode")}
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="number-pad"
+              accessibilityLabel={t("enterBarcode")}
+              testID="scan-denied-manual-barcode"
+            />
+            <TouchableOpacity
+              onPress={handleManualSearch}
+              style={[styles.deniedSearchBtn, { backgroundColor: colors.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel={messages.search}
+              testID="scan-denied-manual-search"
+            >
+              <Ionicons name="search" size={21} color="#fff" />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity
             onPress={() => { setProduct({ barcode: undefined }); setModalVisible(true); }}
             style={styles.manualAddBtn}
+            accessibilityRole="button"
+            accessibilityLabel={t("manualAdd")}
+            testID="scan-manual-add"
           >
             <Text style={[styles.manualAddText, { color: colors.primary, fontFamily: "Inter_500Medium" }]}>
               {t("manualAdd")}
@@ -242,6 +349,7 @@ export default function ScanScreen() {
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         accessibilityRole="button"
         accessibilityLabel={t("close")}
+        testID="scan-close"
       >
         <Ionicons name="close" size={28} color="#fff" />
       </TouchableOpacity>
@@ -270,6 +378,7 @@ export default function ScanScreen() {
             ]}
             accessibilityRole="button"
             accessibilityLabel={t("manualAdd")}
+            testID="scan-manual-add"
           >
             <Ionicons name="create-outline" size={18} color="#fff" />
             <Text style={[styles.manualEntryText, { fontFamily: "Inter_500Medium" }]}>{t("manualAdd")}</Text>
@@ -296,6 +405,10 @@ const styles = StyleSheet.create({
   settingsBtnText: { fontSize: 16 },
   manualAddBtn: { paddingVertical: 12 },
   manualAddText: { fontSize: 15 },
+  manualHint: { fontSize: 13, textAlign: "center" },
+  deniedManualRow: { width: "100%", alignItems: "center", gap: 8 },
+  deniedManualInput: { flex: 1, minHeight: 48, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14 },
+  deniedSearchBtn: { width: 48, height: 48, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   overlay: { ...StyleSheet.absoluteFillObject, flexDirection: "column" },
   overlayTop: { backgroundColor: OVERLAY_COLOR },
   overlayMiddle: { flexDirection: "row", height: "35%" },

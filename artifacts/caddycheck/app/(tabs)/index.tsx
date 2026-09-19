@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   FlatList,
   Modal,
@@ -11,7 +12,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Swipeable } from "react-native-gesture-handler";
 import * as Haptics from "expo-haptics";
@@ -26,6 +27,13 @@ import { PriceTrendModal } from "@/components/PriceTrendModal";
 import { ShareSessionModal } from "@/components/ShareSessionModal";
 import { JoinSessionModal } from "@/components/JoinSessionModal";
 import { BasketItem, PriceHistoryEntry } from "@/types";
+import { parsePositivePrice, parsePositiveQuantity, normalizeLocalizedDigits } from "@/utils/shoppingReceipt";
+
+const basketFeedback = {
+  ar: { invalid: "قيمة غير صالحة", amount: "أدخل مبلغًا صالحًا أكبر من صفر.", quantity: "أدخل كمية صحيحة بين 1 و9999.", storage: "تعذّر حفظ الميزانية. حاول مرة أخرى.", remove: "حذف المنتج", editPrice: "تعديل السعر", editQuantity: "تعديل الكمية" },
+  fr: { invalid: "Valeur incorrecte", amount: "Saisissez un montant valide supérieur à zéro.", quantity: "Saisissez une quantité entière entre 1 et 9999.", storage: "Impossible de sauvegarder le budget. Réessayez.", remove: "Supprimer le produit", editPrice: "Modifier le prix", editQuantity: "Modifier la quantité" },
+  en: { invalid: "Invalid value", amount: "Enter a valid amount greater than zero.", quantity: "Enter a whole quantity between 1 and 9999.", storage: "Could not save the budget. Please try again.", remove: "Remove product", editPrice: "Edit price", editQuantity: "Edit quantity" },
+};
 
 // ─── First-run quick tips overlay ────────────────────────────────────────────
 function QuickTipsOverlay({ visible, onDismiss }: { visible: boolean; onDismiss: () => void }) {
@@ -140,7 +148,7 @@ function BudgetSection({
   onChangeBudget: (v: number | null) => void;
 }) {
   const colors = useColors();
-  const { t, isRTL, flexDirection, textAlign, currencySymbol } = useLanguage();
+  const { t, language, flexDirection, textAlign, currencySymbol } = useLanguage();
   const [editing, setEditing] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<TextInput>(null);
@@ -158,11 +166,13 @@ function BudgetSection({
   };
 
   const commitEdit = () => {
-    const val = parseFloat(inputValue.replace(",", "."));
-    if (!isNaN(val) && val > 0) {
+    const val = parsePositivePrice(inputValue);
+    if (val !== null && val <= 100000000) {
       onChangeBudget(val);
     } else if (inputValue.trim() === "") {
       onChangeBudget(null);
+    } else {
+      Alert.alert(basketFeedback[language].invalid, basketFeedback[language].amount);
     }
     setEditing(false);
   };
@@ -171,6 +181,9 @@ function BudgetSection({
     <View style={[styles.budgetWrapper, { borderBottomColor: colors.border }]}>
       <TouchableOpacity
         onPress={openEdit}
+        accessibilityRole="button"
+        accessibilityLabel={t("setBudget")}
+        testID="edit-budget"
         activeOpacity={0.7}
         style={[styles.budgetRow, { flexDirection }]}
       >
@@ -205,6 +218,9 @@ function BudgetSection({
               },
             ]}
             value={inputValue}
+            accessibilityLabel={t("budget")}
+            testID="budget-input"
+            maxLength={16}
             onChangeText={setInputValue}
             keyboardType="decimal-pad"
             placeholder="0.00"
@@ -319,7 +335,7 @@ function BasketItemRow({
   onTrendTap: () => void;
 }) {
   const colors = useColors();
-  const { t, flexDirection, textAlign, currencySymbol } = useLanguage();
+  const { t, language, flexDirection, textAlign, currencySymbol } = useLanguage();
   const [editPrice, setEditPrice] = useState(false);
   const [editQty,   setEditQty]   = useState(false);
   const [localPrice, setLocalPrice] = useState(item.price.toFixed(2));
@@ -332,9 +348,11 @@ function BasketItemRow({
   const renderRightActions = () => (
     <TouchableOpacity
       onPress={async () => {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
         onDelete();
       }}
+      accessibilityRole="button"
+      accessibilityLabel={`${basketFeedback[language].remove}: ${item.name}`}
       style={[styles.deleteAction, { backgroundColor: colors.destructive }]}
     >
       <Ionicons name="trash-outline" size={22} color="#fff" />
@@ -409,19 +427,26 @@ function BasketItemRow({
                   },
                 ]}
                 value={localPrice}
+                accessibilityLabel={`${basketFeedback[language].editPrice}: ${item.name}`}
+                maxLength={16}
                 onChangeText={setLocalPrice}
                 keyboardType="decimal-pad"
                 autoFocus
                 selectTextOnFocus
                 onBlur={() => {
-                  const v = parseFloat(localPrice.replace(",", "."));
-                  if (!isNaN(v) && v > 0) onEditPrice(localPrice);
+                  const v = parsePositivePrice(localPrice);
+                  if (v !== null && v <= 1000000) onEditPrice(String(v));
+                  else Alert.alert(basketFeedback[language].invalid, basketFeedback[language].amount);
                   setEditPrice(false);
                 }}
               />
             ) : (
               <TouchableOpacity
                 onPress={() => { setEditPrice(true); setLocalPrice(item.price.toFixed(2)); }}
+                accessibilityRole="button"
+                accessibilityLabel={`${basketFeedback[language].editPrice}: ${item.name}`}
+                testID={`edit-price-${item.id}`}
+                style={{ minHeight: 44, justifyContent: "center" }}
               >
                 <Text style={[styles.priceText, { color: colors.primary, fontFamily: "Inter_600SemiBold" }]}>
                   {item.price.toFixed(2)}
@@ -446,20 +471,27 @@ function BasketItemRow({
                   },
                 ]}
                 value={localQty}
-                onChangeText={(v) => setLocalQty(v.replace(/[^0-9]/g, ""))}
+                onChangeText={(v) => setLocalQty(normalizeLocalizedDigits(v))}
+                accessibilityLabel={`${basketFeedback[language].editQuantity}: ${item.name}`}
+                maxLength={4}
                 keyboardType="number-pad"
                 autoFocus
                 selectTextOnFocus
                 textAlign="center"
                 onBlur={() => {
-                  const v = parseInt(localQty, 10);
-                  if (!isNaN(v) && v >= 1) onEditQty(localQty);
+                  const v = parsePositiveQuantity(localQty);
+                  if (v !== null) onEditQty(String(v));
+                  else Alert.alert(basketFeedback[language].invalid, basketFeedback[language].quantity);
                   setEditQty(false);
                 }}
               />
             ) : (
               <TouchableOpacity
                 onPress={() => { setEditQty(true); setLocalQty(String(item.quantity)); }}
+                accessibilityRole="button"
+                accessibilityLabel={`${basketFeedback[language].editQuantity}: ${item.name}`}
+                testID={`edit-quantity-${item.id}`}
+                style={{ minHeight: 44, justifyContent: "center" }}
               >
                 <View style={[styles.qtyBadge, { backgroundColor: colors.muted, borderRadius: 6 }]}>
                   <Text style={[styles.qtyText, { color: colors.foreground, fontFamily: "Inter_600SemiBold" }]}>
@@ -490,6 +522,8 @@ function BasketItemRow({
         {showTrend && (
           <TouchableOpacity
             onPress={onTrendTap}
+            accessibilityRole="button"
+            accessibilityLabel={`${t("archive")}: ${item.name}`}
             style={[
               styles.chartBtn,
               {
@@ -504,6 +538,15 @@ function BasketItemRow({
             <Ionicons name="stats-chart-outline" size={16} color={colors.primary} />
           </TouchableOpacity>
         )}
+        <TouchableOpacity
+          onPress={onDelete}
+          accessibilityRole="button"
+          accessibilityLabel={`${basketFeedback[language].remove}: ${item.name}`}
+          testID={`remove-item-${item.id}`}
+          style={{ minHeight: 44, minWidth: 44, alignItems: "center", justifyContent: "center" }}
+        >
+          <Ionicons name="trash-outline" size={19} color={colors.destructive} />
+        </TouchableOpacity>
       </View>
     </Swipeable>
   );
@@ -513,11 +556,11 @@ function BasketItemRow({
 export default function BasketScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { t, isRTL, flexDirection, currencySymbol } = useLanguage();
+  const { t, language, isRTL, flexDirection, currencySymbol } = useLanguage();
+  const currency = currencySymbol;
   const {
     items,
     trips,
-    priceHistory,
     addItem,
     removeItem,
     updateItemPrice,
@@ -527,6 +570,8 @@ export default function BasketScreen() {
     sessionCode,
     sessionReminders,
     sessionSyncFailed,
+    storageError,
+    retryPersistence,
   } = useBasket();
 
   const [langSheetVisible,  setLangSheetVisible]  = useState(false);
@@ -540,12 +585,12 @@ export default function BasketScreen() {
   useEffect(() => {
     AsyncStorage.getItem("caddycheck_seen_tips").then((seen) => {
       if (!seen) setShowQuickTips(true);
-    });
+    }).catch(() => setShowQuickTips(true));
   }, []);
 
   const dismissQuickTips = () => {
     setShowQuickTips(false);
-    AsyncStorage.setItem("caddycheck_seen_tips", "1");
+    void AsyncStorage.setItem("caddycheck_seen_tips", "1").catch(() => {});
   };
 
   const pendingRemindersCount = sessionReminders.filter((r) => !r.done).length;
@@ -553,11 +598,13 @@ export default function BasketScreen() {
   const wasWarningRef = useRef(false);
   const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
+    let active = true;
     AsyncStorage.getItem("caddycheck_budget").then((val) => {
-      if (val) setBudgetState(parseFloat(val));
-    });
-  }, []);
+      if (active) setBudgetState(val ? parsePositivePrice(val) : null);
+    }).catch(() => { if (active) setBudgetState(null); });
+    return () => { active = false; };
+  }, []));
 
   const showBanner = (type: "warning" | "over") => {
     if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
@@ -576,10 +623,10 @@ export default function BasketScreen() {
     const isWarning = ratio >= 0.8 && ratio <= 1;
 
     if (isOver && !wasOverRef.current) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       showBanner("over");
     } else if (isWarning && !wasWarningRef.current && !wasOverRef.current) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       showBanner("warning");
     }
     wasOverRef.current = isOver;
@@ -593,11 +640,15 @@ export default function BasketScreen() {
   }, []);
 
   const handleSetBudget = async (val: number | null) => {
-    setBudgetState(val);
-    if (val === null) {
-      await AsyncStorage.removeItem("caddycheck_budget");
-    } else {
-      await AsyncStorage.setItem("caddycheck_budget", String(val));
+    try {
+      if (val === null) {
+        await AsyncStorage.removeItem("caddycheck_budget");
+      } else {
+        await AsyncStorage.setItem("caddycheck_budget", String(val));
+      }
+      setBudgetState(val);
+    } catch {
+      Alert.alert(basketFeedback[language].storage);
     }
   };
 
@@ -605,13 +656,27 @@ export default function BasketScreen() {
   const tripProductKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const trip of trips) {
+      if (trip.currency !== currency) continue;
       for (const item of trip.items) {
         if (item.barcode) keys.add(`bc:${item.barcode}`);
         keys.add(`nm:${item.name.trim().toLowerCase()}`);
       }
     }
     return keys;
-  }, [trips]);
+  }, [trips, currency]);
+
+  const currentCurrencyPrices = useMemo(() => {
+    const history: Record<string, PriceHistoryEntry> = {};
+    for (const trip of [...trips].sort((a, b) => Date.parse(a.date) - Date.parse(b.date))) {
+      if (trip.currency !== currency) continue;
+      for (const item of trip.items) {
+        if (item.barcode) history[item.barcode] = {
+          lastPrice: item.price, lastStore: trip.store, lastDate: trip.date,
+        };
+      }
+    }
+    return history;
+  }, [trips, currency]);
 
   // Build a "most frequently bought" quick-add list from trip history
   const frequentItems = useMemo(() => {
@@ -624,7 +689,8 @@ export default function BasketScreen() {
       count: number;
     };
     const map = new Map<string, FreqEntry>();
-    for (const trip of trips) {
+    for (const trip of [...trips].sort((a, b) => Date.parse(a.date) - Date.parse(b.date))) {
+      if (trip.currency !== currency) continue;
       for (const item of trip.items) {
         const key = item.barcode ? `bc:${item.barcode}` : `nm:${item.name.trim().toLowerCase()}`;
         const existing = map.get(key);
@@ -652,14 +718,11 @@ export default function BasketScreen() {
       .filter((e) => e.count >= 2 && !inBasketKeys.has(e.key))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10)
-      .map((e) => {
-        const price = e.barcode && priceHistory[e.barcode] ? priceHistory[e.barcode].lastPrice : e.lastPrice;
-        return { ...e, lastPrice: price };
-      });
-  }, [trips, items, priceHistory]);
+      .map((e) => ({ ...e }));
+  }, [trips, items, currency]);
 
   const handleQuickAdd = async (entry: (typeof frequentItems)[number]) => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     addItem({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       barcode: entry.barcode,
@@ -758,11 +821,25 @@ export default function BasketScreen() {
       )}
 
       {/* Budget */}
+      {storageError && (
+        <View accessibilityRole="alert" style={{ padding: 12, backgroundColor: colors.muted }}>
+          <Text style={{ color: colors.destructive, textAlign: isRTL ? "right" : "left" }}>
+            {language === "ar" ? "تعذّر حفظ بعض البيانات. لا تغلق التطبيق قبل إعادة المحاولة." : language === "fr" ? "Certaines données ne sont pas sauvegardées. Réessayez avant de fermer l’application." : "Some data is not saved. Retry before closing the app."}
+          </Text>
+          <TouchableOpacity accessibilityRole="button" onPress={() => { void retryPersistence(); }} style={{ minHeight: 44, justifyContent: "center" }}>
+            <Text style={{ color: colors.primary }}>{language === "ar" ? "إعادة محاولة الحفظ" : language === "fr" ? "Réessayer" : "Retry saving"}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <BudgetSection total={basketTotal} budget={budget} onChangeBudget={handleSetBudget} />
 
       {/* Total panel */}
       <TouchableOpacity
         onPress={() => { if (items.length === 0) return; router.push("/compare"); }}
+        accessibilityRole="button"
+        accessibilityLabel={t("compare")}
+        accessibilityState={{ disabled: items.length === 0 }}
+        testID="review-basket"
         activeOpacity={items.length > 0 ? 0.8 : 1}
         style={[styles.totalSection, { backgroundColor: panelBg }]}
       >
@@ -838,7 +915,7 @@ export default function BasketScreen() {
         data={items}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => {
-          const historyEntry = item.barcode ? priceHistory[item.barcode] : undefined;
+          const historyEntry = item.barcode ? currentCurrencyPrices[item.barcode] : undefined;
           const hasTripData =
             (item.barcode ? tripProductKeys.has(`bc:${item.barcode}`) : false) ||
             tripProductKeys.has(`nm:${item.name.trim().toLowerCase()}`);
@@ -850,15 +927,15 @@ export default function BasketScreen() {
               hasTripData={hasTripData}
               onDelete={() => removeItem(item.id)}
               onEditPrice={(val) => {
-                const v = parseFloat(val.replace(",", "."));
-                if (!isNaN(v) && v > 0) updateItemPrice(item.id, v);
+                const v = parsePositivePrice(val);
+                if (v !== null) updateItemPrice(item.id, v);
               }}
               onEditQty={(val) => {
-                const v = parseInt(val, 10);
-                if (!isNaN(v) && v >= 1) updateItemQuantity(item.id, v);
+                const v = parsePositiveQuantity(val);
+                if (v !== null) updateItemQuantity(item.id, v);
               }}
               onTrendTap={async () => {
-                await Haptics.selectionAsync();
+                void Haptics.selectionAsync().catch(() => {});
                 setTrendItem({ name: item.name, barcode: item.barcode });
               }}
             />
