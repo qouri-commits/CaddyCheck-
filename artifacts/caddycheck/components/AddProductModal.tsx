@@ -31,6 +31,7 @@ interface ScannedProduct {
 interface Props {
   visible: boolean;
   onClose: () => void;
+  onAdded?: (item: BasketItem) => void;
   product: ScannedProduct | null;
   isLoading?: boolean;
 }
@@ -39,7 +40,7 @@ function generateId() {
   return Date.now().toString() + Math.random().toString(36).substr(2, 9);
 }
 
-export function AddProductModal({ visible, onClose, product, isLoading }: Props) {
+export function AddProductModal({ visible, onClose, onAdded, product, isLoading }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { t, isRTL, currencySymbol, language } = useLanguage();
@@ -93,18 +94,6 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
     }
     setValidationError("");
 
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    if (product?.barcode) {
-      const nextHistory = {
-        lastPrice: numPrice,
-        lastStore: "",
-        lastDate: new Date().toISOString(),
-        currency: currencySymbol,
-      };
-      updatePriceHistory(product.barcode, nextHistory);
-    }
-
     const item: BasketItem = {
       id: generateId(),
       barcode: product?.barcode,
@@ -114,8 +103,28 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
       imageUrl: product?.imageUrl,
     };
 
+    // Adding to the basket is the primary action. A secondary history write
+    // must never prevent a scanned product from being added.
     addItem(item);
+    if (product?.barcode) {
+      try {
+        updatePriceHistory(product.barcode, {
+          lastPrice: numPrice,
+          lastStore: {
+            ar: "غير محدد",
+            fr: "Non renseigné",
+            en: "Not specified",
+          }[language],
+          lastDate: new Date().toISOString(),
+          currency: currencySymbol,
+        });
+      } catch (error) {
+        console.error("Could not update scanned product price history", error);
+      }
+    }
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     onClose();
+    onAdded?.(item);
   };
 
   const textAlign = isRTL ? "right" : "left";
@@ -229,7 +238,7 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
             </View>
 
             <View style={[styles.rowInputs, { paddingHorizontal: 20 }]}>
-              <View style={[styles.inputGroup, { flex: 2 }]}>
+              <View style={[styles.inputGroup, styles.priceGroup]}>
                 <Text
                   style={[
                     styles.inputLabel,
@@ -265,7 +274,7 @@ export function AddProductModal({ visible, onClose, product, isLoading }: Props)
                    testID="add-product-price"
                 />
               </View>
-              <View style={[styles.inputGroup, { flex: 1, marginLeft: 10 }]}>
+              <View style={[styles.inputGroup, styles.quantityGroup]}>
                 <Text
                   style={[
                     styles.inputLabel,
@@ -518,21 +527,32 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
+  priceGroup: {
+    flex: 1.7,
+    minWidth: 0,
+  },
+  quantityGroup: {
+    flex: 1.3,
+    minWidth: 136,
+  },
   qtyRow: {
     flexDirection: "row",
     alignItems: "center",
     height: 48,
   },
   qtyBtn: {
-    width: 44,
+    width: 40,
     height: 48,
     alignItems: "center",
     justifyContent: "center",
   },
   qtyInput: {
     flex: 1,
+    minWidth: 48,
     fontSize: 18,
     height: "100%",
+    paddingHorizontal: 2,
+    paddingVertical: 0,
   },
   alertBox: {
     padding: 12,

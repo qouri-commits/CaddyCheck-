@@ -2,7 +2,7 @@
   "expo": {
     "name": "CaddyCheck",
     "slug": "caddycheck",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "caddycheck",
@@ -16,14 +16,14 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.caddycheck.app",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "infoPlist": {
         "NSCameraUsageDescription": "CaddyCheck يحتاج إلى الكاميرا لمسح باركود المنتجات."
       }
     },
     "android": {
       "package": "com.caddycheck.app",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "android.permission.CAMERA"
       ],

@@ -174,6 +174,10 @@ export default function ScanScreen() {
     lookupControllerRef.current = null;
   };
 
+  const handleProductAdded = () => {
+    router.replace("/");
+  };
+
   const handleManualSearch = async () => {
     if (!manualBarcode.trim()) {
       setProduct({ barcode: undefined });
@@ -237,7 +241,7 @@ export default function ScanScreen() {
             </TouchableOpacity>
           </View>
         </View>
-        <AddProductModal visible={modalVisible} onClose={handleCloseModal} product={product} isLoading={isLoading} />
+        <AddProductModal visible={modalVisible} onClose={handleCloseModal} onAdded={handleProductAdded} product={product} isLoading={isLoading} />
       </View>
     );
   }
@@ -329,7 +333,7 @@ export default function ScanScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-        <AddProductModal visible={modalVisible} onClose={handleCloseModal} product={product} isLoading={isLoading} />
+        <AddProductModal visible={modalVisible} onClose={handleCloseModal} onAdded={handleProductAdded} product={product} isLoading={isLoading} />
       </View>
     );
   }
@@ -386,7 +390,7 @@ export default function ScanScreen() {
         </View>
       </View>
 
-      <AddProductModal visible={modalVisible} onClose={handleCloseModal} product={product} isLoading={isLoading} />
+      <AddProductModal visible={modalVisible} onClose={handleCloseModal} onAdded={handleProductAdded} product={product} isLoading={isLoading} />
     </View>
   );
 }
