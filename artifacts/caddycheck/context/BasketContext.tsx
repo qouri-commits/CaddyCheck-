@@ -9,6 +9,7 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BasketItem, PriceHistoryEntry, Trip } from "@/types";
 import { API_BASE } from "@/constants/api";
+import { useLanguage } from "@/context/LanguageContext";
 import {
   assertQuantity,
   calculateBasketItemCount,
@@ -73,6 +74,7 @@ const STORAGE_KEYS = {
 };
 
 export function BasketProvider({ children }: { children: React.ReactNode }) {
+  const { currency: appCurrency } = useLanguage();
   const [items,        setItems]       = useState<BasketItem[]>([]);
   const [trips,        setTrips]       = useState<Trip[]>([]);
   const [priceHistory, setPriceHistory]= useState<Record<string, PriceHistoryEntry>>({});
@@ -267,7 +269,8 @@ export function BasketProvider({ children }: { children: React.ReactNode }) {
 
   // ── Sync basket to server (debounced 1.5s, auto-retries on failure) ──────
   const syncBasketToServer = useCallback((currentItems: BasketItem[], currency?: string) => {
-    if (currency !== undefined) lastSyncedCurrencyRef.current = currency;
+    const syncCurrency = currency ?? appCurrency;
+    lastSyncedCurrencyRef.current = syncCurrency;
     if (!sessionCodeRef.current || !sessionTokenRef.current || !API_BASE) return;
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
@@ -291,7 +294,7 @@ export function BasketProvider({ children }: { children: React.ReactNode }) {
               barcode: i.barcode,
               imageUrl: i.imageUrl,
             })),
-            currency: currency ?? lastSyncedCurrencyRef.current,
+            currency: syncCurrency,
           }),
         });
         if (requestId !== syncRequestRef.current) return;
@@ -316,7 +319,7 @@ export function BasketProvider({ children }: { children: React.ReactNode }) {
     syncTimerRef.current = setTimeout(() => {
       void attemptSync(0);
     }, 1500);
-  }, []);
+  }, [appCurrency]);
 
   // ── Poll for new reminders from family (every 20s when session active) ───
   useEffect(() => {

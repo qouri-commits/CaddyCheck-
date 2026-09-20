@@ -603,8 +603,9 @@ export default function SettingsScreen() {
         onClose={() => setRegionSheetVisible(false)}
         selectedRegionId={homeRegionId}
         onSelect={async (region: Region) => {
-          if (region.id !== homeRegionId && !requireEmptyBasketForCurrencyChange()) return;
+          if (region.id !== homeRegionId && !requireEmptyBasketForCurrencyChange()) return false;
           await changeRegion(region.id);
+          return true;
         }}
       />
 

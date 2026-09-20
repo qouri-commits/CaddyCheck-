@@ -340,10 +340,30 @@ function BasketItemRow({
   const [editQty,   setEditQty]   = useState(false);
   const [localPrice, setLocalPrice] = useState(item.price.toFixed(2));
   const [localQty,   setLocalQty]   = useState(String(item.quantity));
+  const priceCommitRef = useRef(false);
+  const quantityCommitRef = useRef(false);
 
   const subtotal  = item.price * item.quantity;
   const priceDiff = historyEntry != null ? item.price - historyEntry.lastPrice : null;
   const showTrend = hasTripData || historyEntry != null;
+
+  const commitPrice = () => {
+    if (priceCommitRef.current) return;
+    priceCommitRef.current = true;
+    const value = parsePositivePrice(localPrice);
+    if (value !== null && value <= 1000000) onEditPrice(String(value));
+    else Alert.alert(basketFeedback[language].invalid, basketFeedback[language].amount);
+    setEditPrice(false);
+  };
+
+  const commitQuantity = () => {
+    if (quantityCommitRef.current) return;
+    quantityCommitRef.current = true;
+    const value = parsePositiveQuantity(localQty);
+    if (value !== null) onEditQty(String(value));
+    else Alert.alert(basketFeedback[language].invalid, basketFeedback[language].quantity);
+    setEditQty(false);
+  };
 
   const renderRightActions = () => (
     <TouchableOpacity
@@ -427,22 +447,26 @@ function BasketItemRow({
                   },
                 ]}
                 value={localPrice}
+                testID={`edit-price-input-${item.id}`}
                 accessibilityLabel={`${basketFeedback[language].editPrice}: ${item.name}`}
                 maxLength={16}
                 onChangeText={setLocalPrice}
                 keyboardType="decimal-pad"
                 autoFocus
                 selectTextOnFocus
+                returnKeyType="done"
+                onSubmitEditing={commitPrice}
                 onBlur={() => {
-                  const v = parsePositivePrice(localPrice);
-                  if (v !== null && v <= 1000000) onEditPrice(String(v));
-                  else Alert.alert(basketFeedback[language].invalid, basketFeedback[language].amount);
-                  setEditPrice(false);
+                  if (editPrice) commitPrice();
                 }}
               />
             ) : (
               <TouchableOpacity
-                onPress={() => { setEditPrice(true); setLocalPrice(item.price.toFixed(2)); }}
+                onPress={() => {
+                  priceCommitRef.current = false;
+                  setEditPrice(true);
+                  setLocalPrice(item.price.toFixed(2));
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={`${basketFeedback[language].editPrice}: ${item.name}`}
                 testID={`edit-price-${item.id}`}
@@ -471,6 +495,7 @@ function BasketItemRow({
                   },
                 ]}
                 value={localQty}
+                testID={`edit-quantity-input-${item.id}`}
                 onChangeText={(v) => setLocalQty(normalizeLocalizedDigits(v))}
                 accessibilityLabel={`${basketFeedback[language].editQuantity}: ${item.name}`}
                 maxLength={4}
@@ -478,16 +503,19 @@ function BasketItemRow({
                 autoFocus
                 selectTextOnFocus
                 textAlign="center"
+                returnKeyType="done"
+                onSubmitEditing={commitQuantity}
                 onBlur={() => {
-                  const v = parsePositiveQuantity(localQty);
-                  if (v !== null) onEditQty(String(v));
-                  else Alert.alert(basketFeedback[language].invalid, basketFeedback[language].quantity);
-                  setEditQty(false);
+                  if (editQty) commitQuantity();
                 }}
               />
             ) : (
               <TouchableOpacity
-                onPress={() => { setEditQty(true); setLocalQty(String(item.quantity)); }}
+                onPress={() => {
+                  quantityCommitRef.current = false;
+                  setEditQty(true);
+                  setLocalQty(String(item.quantity));
+                }}
                 accessibilityRole="button"
                 accessibilityLabel={`${basketFeedback[language].editQuantity}: ${item.name}`}
                 testID={`edit-quantity-${item.id}`}
@@ -780,6 +808,7 @@ export default function BasketScreen() {
           {/* Share icon — share own basket (host) */}
           <TouchableOpacity
             onPress={() => setShareModalVisible(true)}
+            testID="open-share-session"
             style={styles.headerBtn}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityRole="button"

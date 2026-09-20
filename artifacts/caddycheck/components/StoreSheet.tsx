@@ -190,6 +190,7 @@ export function StoreSheet({ visible, onClose, onSelect }: Props) {
         <Pressable
           key={store.name}
           onPress={() => handleSelect(store)}
+          testID={`store-option-${store.name}`}
           style={({ pressed }) => [
             styles.storeRow,
             {
