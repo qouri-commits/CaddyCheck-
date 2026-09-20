@@ -24,7 +24,7 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   selectedRegionId: string | null;
-  onSelect: (region: Region) => void;
+  onSelect: (region: Region) => Promise<boolean>;
 }
 
 export function RegionSheet({ visible, onClose, selectedRegionId, onSelect }: Props) {
@@ -49,9 +49,9 @@ export function RegionSheet({ visible, onClose, selectedRegionId, onSelect }: Pr
   );
 
   const handleSelect = useCallback(async (region: Region) => {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onSelect(region);
-    onClose();
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const changed = await onSelect(region);
+    if (changed) onClose();
   }, [onSelect, onClose]);
 
   const renderItem = useCallback(({ item }: { item: Region }) => {
@@ -62,6 +62,7 @@ export function RegionSheet({ visible, onClose, selectedRegionId, onSelect }: Pr
     return (
       <TouchableOpacity
         onPress={() => handleSelect(item)}
+        testID={`region-option-${item.id}`}
         activeOpacity={0.6}
         style={[
           styles.regionRow,
@@ -113,18 +114,19 @@ export function RegionSheet({ visible, onClose, selectedRegionId, onSelect }: Pr
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose} />
-      <View
-        style={[
-          styles.sheet,
-          {
-            backgroundColor: colors.background,
-            paddingBottom: insets.bottom,
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-          },
-        ]}
-      >
+      <View style={styles.modalRoot}>
+        <Pressable style={styles.overlay} onPress={onClose} />
+        <View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: colors.background,
+              paddingBottom: insets.bottom,
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+            },
+          ]}
+        >
         <View style={[styles.handle, { backgroundColor: colors.mutedForeground }]} />
 
         {/* Header */}
@@ -155,6 +157,7 @@ export function RegionSheet({ visible, onClose, selectedRegionId, onSelect }: Pr
             placeholderTextColor={colors.mutedForeground}
             value={query}
             onChangeText={setQuery}
+            testID="region-search"
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery("")}>
@@ -183,14 +186,16 @@ export function RegionSheet({ visible, onClose, selectedRegionId, onSelect }: Pr
             style={{ flex: 1 }}
           />
         )}
+        </View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay:          { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
-  sheet:            { maxHeight: "88%", paddingTop: 12 },
+  modalRoot:        { flex: 1, justifyContent: "flex-end" },
+  overlay:          { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
+  sheet:            { width: "100%", height: "88%", paddingTop: 12 },
   handle:           { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 14, opacity: 0.3 },
   sheetHeader:      { alignItems: "center", paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: StyleSheet.hairlineWidth, gap: 12 },
   sheetTitle:       { fontSize: 18 },

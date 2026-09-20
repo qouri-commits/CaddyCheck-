@@ -29,7 +29,7 @@ interface Props {
 export function ShareSessionModal({ visible, onClose }: Props) {
   const colors  = useColors();
   const insets  = useSafeAreaInsets();
-  const { t, isRTL, currencySymbol } = useLanguage();
+  const { t, isRTL, language, currency, currencySymbol } = useLanguage();
   const flexDir = isRTL ? "row-reverse" : "row";
   const {
     items,
@@ -37,6 +37,7 @@ export function ShareSessionModal({ visible, onClose }: Props) {
     sessionCode,
     sessionHostToken,
     sessionReminders,
+    sessionSyncFailed,
     startSession,
     endSession,
     markReminderDone,
@@ -59,7 +60,7 @@ export function ShareSessionModal({ visible, onClose }: Props) {
   const handleCreate = async () => {
     const name = hostName.trim() || t("shopper");
     setCreating(true);
-    const ok = await startSession(name);
+    const ok = await startSession(name, currency);
     setCreating(false);
     if (!ok) {
       Alert.alert(t("errorTitle") ?? "", t("sessionCreateFailed") ?? "");
@@ -121,9 +122,11 @@ export function ShareSessionModal({ visible, onClose }: Props) {
             </Text>
             {sessionCode && (
               <View style={[{ flexDirection: flexDir, alignItems: "center", gap: 6, marginTop: 4 }]}>
-                <View style={[styles.liveDot, { backgroundColor: "#34C759" }]} />
-                <Text style={[styles.liveText, { color: "#34C759", fontFamily: "Inter_600SemiBold" }]}>
-                  {t("sessionActive")}
+                <View style={[styles.liveDot, { backgroundColor: sessionSyncFailed ? colors.destructive : "#34C759" }]} />
+                <Text style={[styles.liveText, { color: sessionSyncFailed ? colors.destructive : "#34C759", fontFamily: "Inter_600SemiBold" }]}>
+                  {sessionSyncFailed
+                    ? ({ ar: "تعذرت مزامنة السلة", fr: "Synchronisation échouée", en: "Basket sync failed" }[language])
+                    : t("sessionActive")}
                 </Text>
               </View>
             )}
@@ -168,9 +171,11 @@ export function ShareSessionModal({ visible, onClose }: Props) {
               autoFocus
               onSubmitEditing={handleCreate}
               returnKeyType="done"
+              testID="share-host-name"
             />
             <TouchableOpacity
               onPress={handleCreate}
+              testID="share-create-session"
               disabled={creating}
               style={[styles.createBtn, { backgroundColor: colors.primary, borderRadius: 14 }]}
             >
